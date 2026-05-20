@@ -2,10 +2,20 @@ import express, { type Express } from "express";
 import cors from "cors";
 import path from "path";
 import router from "./routes";
+import { handleStripeWebhook } from "./routes/webhooks";
 
 const app: Express = express();
 
 app.use(cors());
+
+// Stripe webhook needs the raw request body for signature verification.
+// Must be mounted BEFORE express.json() so the body isn't parsed first.
+app.post(
+  "/api/webhooks/stripe",
+  express.raw({ type: "application/json" }),
+  handleStripeWebhook,
+);
+
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 

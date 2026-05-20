@@ -38,6 +38,21 @@ async function migrate() {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS pull_probabilities TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS possible_pulls TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS intel_report TEXT NOT NULL DEFAULT '';
+
+    CREATE TABLE IF NOT EXISTS orders (
+      id SERIAL PRIMARY KEY,
+      stripe_session_id TEXT NOT NULL UNIQUE,
+      customer_email TEXT NOT NULL,
+      customer_name TEXT,
+      product_id INTEGER,
+      quantity INTEGER NOT NULL,
+      subtotal_cents INTEGER NOT NULL,
+      shipping_cents INTEGER NOT NULL,
+      shipping_method TEXT,
+      total_cents INTEGER NOT NULL,
+      shipping_address TEXT,
+      created_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Seed the default product if the table is empty

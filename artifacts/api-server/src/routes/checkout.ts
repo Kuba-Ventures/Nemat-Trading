@@ -95,6 +95,9 @@ router.post("/checkout", async (req, res) => {
         },
       },
     ],
+    metadata: {
+      productId: String(productId),
+    },
     success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${frontendUrl}/checkout?qty=${quantity}`,
   });
