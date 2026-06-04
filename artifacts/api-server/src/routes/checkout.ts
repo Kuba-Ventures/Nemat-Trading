@@ -71,16 +71,19 @@ router.post("/checkout", async (req, res) => {
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
+    automatic_tax: { enabled: true },
     line_items: [
       {
         quantity,
         price_data: {
           currency: "usd",
           unit_amount: product.price, // already in cents
+          tax_behavior: "exclusive", // tax added on top of the listed price
           product_data: {
             name: product.title,
             description: product.subtitle || undefined,
             images: product.imageUrl ? [product.imageUrl] : undefined,
+            tax_code: "txcd_99999999", // General - Tangible Goods
           },
         },
       },
@@ -92,6 +95,9 @@ router.post("/checkout", async (req, res) => {
           type: "fixed_amount",
           display_name: shippingLabel,
           fixed_amount: { amount: shippingCents, currency: "usd" },
+          tax_behavior: "exclusive",
+          // Stripe Tax decides shipping taxability per jurisdiction from this code
+          tax_code: "txcd_92010001", // Shipping
         },
       },
     ],
