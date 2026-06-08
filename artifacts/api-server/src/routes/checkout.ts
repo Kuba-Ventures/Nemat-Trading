@@ -89,6 +89,7 @@ router.post("/checkout", async (req, res) => {
       },
     ],
     shipping_address_collection: { allowed_countries: ["US"] },
+    phone_number_collection: { enabled: true },
     shipping_options: [
       {
         shipping_rate_data: {

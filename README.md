@@ -188,10 +188,19 @@ After deploying, register the webhook endpoint in the Stripe dashboard:
 
 ## Google Sheets integration
 
-Order completions and waitlist signups are pushed to a Google Sheet via a deployed Apps Script web app. The Apps Script receives a POST with `{ tab, row, secret }` and appends the row to the named sheet tab (`"Waitlist"` or `"Orders"`).
+Order completions and waitlist signups are pushed to a Google Sheet via a deployed Apps Script web app. The Apps Script receives a POST with `{ tab, row, secret }` and appends the row to the named sheet tab. The two tabs and their column order:
+
+- **`"Email List"`** (waitlist) — `Timestamp · Email · Location · Status`
+  - `Location` is best-effort geolocated from the visitor's IP at signup (via `ip-api.com`); blank if it can't be resolved. Requires `app.set("trust proxy", true)` so `req.ip` is the real client IP behind Railway's proxy.
+  - `Status` is written as `Member` by default; it's a manual dropdown (`Admin`/`Member`) you can override in the sheet.
+- **`"Orders"`** — `Timestamp · Order ID · Email · Order Count · Phone · Name · Item · Subtotal · Shipping · Tax · Tax Rate · Total · Currency · Ship To Name · Address 1 · Address 2 · City · State · ZIP · Country · Payment Intent`
+  - All pulled from the completed Stripe Checkout session. `Phone` requires `phone_number_collection` on the checkout session (enabled in `routes/checkout.ts`).
+
+Config:
 
 - `SHEETS_WEBHOOK_URL`: the deployed Apps Script URL (from Script editor → Deploy → Manage deployments)
 - `SHEETS_WEBHOOK_SECRET`: a shared secret hardcoded in both Railway env vars and the Apps Script source — must match exactly
+- The Apps Script must have sheet tabs named exactly `Email List` and `Orders` (it appends via `getSheetByName(tab)`)
 - Sheet sync is non-blocking: a failure does not affect the HTTP response to the client or Stripe
 
 ---

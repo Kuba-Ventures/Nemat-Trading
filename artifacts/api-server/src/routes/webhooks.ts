@@ -33,18 +33,36 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   try {
     const session = event.data.object as Stripe.Checkout.Session;
     const full = await stripe.checkout.sessions.retrieve(session.id, {
-      expand: ["line_items", "shipping_cost.shipping_rate"],
+      expand: ["line_items", "shipping_cost.shipping_rate", "total_details.breakdown"],
     });
 
-    const lineItem = full.line_items?.data[0];
-    const itemName = lineItem?.description ?? "Unknown item";
-    const quantity = lineItem?.quantity ?? 1;
-    const subtotalCents = lineItem?.amount_subtotal ?? 0;
+    const lineItems = full.line_items?.data ?? [];
+    // One product per checkout today, but join defensively in case that changes.
+    const itemName = lineItems.map((li) => li.description).filter(Boolean).join(", ") || "Unknown item";
+    const orderCount = lineItems.reduce((n, li) => n + (li.quantity ?? 0), 0) || 1;
+    const quantity = lineItems[0]?.quantity ?? 1;
+    const subtotalCents = lineItems.reduce((n, li) => n + (li.amount_subtotal ?? 0), 0);
     const shippingCents = full.shipping_cost?.amount_total ?? 0;
+    const taxCents = full.total_details?.amount_tax ?? 0;
     const totalCents = full.amount_total ?? 0;
+    const currency = (full.currency ?? "usd").toUpperCase();
     const customerEmail = full.customer_details?.email ?? "";
     const customerName = full.customer_details?.name ?? "";
+    const customerPhone = full.customer_details?.phone ?? "";
 
+    // Prefer the actual tax rate from Stripe's breakdown; fall back to effective.
+    const breakdownRate =
+      full.total_details?.breakdown?.taxes?.[0]?.rate?.effective_percentage ??
+      full.total_details?.breakdown?.taxes?.[0]?.rate?.percentage;
+    const taxableBase = subtotalCents + shippingCents;
+    const taxRate =
+      breakdownRate != null
+        ? `${breakdownRate}%`
+        : taxCents > 0 && taxableBase > 0
+          ? `${((taxCents / taxableBase) * 100).toFixed(2)}%`
+          : "";
+
+    const shipName = full.shipping_details?.name ?? "";
     const addr = full.shipping_details?.address;
     const formattedAddress = addr
       ? [addr.line1, addr.line2, `${addr.city}, ${addr.state} ${addr.postal_code}`]
@@ -55,6 +73,11 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     const shippingRate = full.shipping_cost?.shipping_rate;
     const shippingMethod =
       shippingRate && typeof shippingRate === "object" ? shippingRate.display_name ?? "" : "";
+
+    const paymentIntentId =
+      typeof full.payment_intent === "string"
+        ? full.payment_intent
+        : full.payment_intent?.id ?? "";
 
     const productIdMeta = full.metadata?.productId;
     const productId = productIdMeta ? Number(productIdMeta) || null : null;
@@ -71,24 +94,39 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
         subtotalCents,
         shippingCents,
         shippingMethod: shippingMethod || null,
+        taxCents,
         totalCents,
         shippingAddress: formattedAddress || null,
       })
       .onConflictDoNothing();
 
-    // Append to Google Sheet (non-blocking failure)
+    // Append to Google Sheet (non-blocking failure).
+    // Orders columns:
+    // Timestamp | Order ID | Email | Order Count | Phone | Name | Item | Subtotal |
+    // Shipping | Tax | Tax Rate | Total | Currency | Ship To Name | Address 1 |
+    // Address 2 | City | State | ZIP | Country | Payment Intent
     await appendToSheet("Orders", [
       new Date().toISOString(),
-      customerName,
+      full.id,
       customerEmail,
+      orderCount,
+      customerPhone,
+      customerName,
       itemName,
-      quantity,
       (subtotalCents / 100).toFixed(2),
       (shippingCents / 100).toFixed(2),
-      shippingMethod,
+      (taxCents / 100).toFixed(2),
+      taxRate,
       (totalCents / 100).toFixed(2),
-      formattedAddress,
-      full.id,
+      currency,
+      shipName,
+      addr?.line1 ?? "",
+      addr?.line2 ?? "",
+      addr?.city ?? "",
+      addr?.state ?? "",
+      addr?.postal_code ?? "",
+      addr?.country ?? "",
+      paymentIntentId,
     ]);
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);

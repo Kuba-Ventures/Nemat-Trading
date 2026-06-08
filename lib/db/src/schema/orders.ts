@@ -10,6 +10,7 @@ export const ordersTable = pgTable("orders", {
   subtotalCents: integer("subtotal_cents").notNull(),
   shippingCents: integer("shipping_cents").notNull(),
   shippingMethod: text("shipping_method"),
+  taxCents: integer("tax_cents").notNull().default(0),
   totalCents: integer("total_cents").notNull(),
   shippingAddress: text("shipping_address"),
   createdAt: timestamp("created_at").notNull().defaultNow(),

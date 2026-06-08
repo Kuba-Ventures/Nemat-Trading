@@ -53,6 +53,12 @@ async function migrate() {
       shipping_address TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+
+    CREATE TABLE IF NOT EXISTS subscribers (
+      id SERIAL PRIMARY KEY,
+      email TEXT NOT NULL UNIQUE,
+      subscribed_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
   `);
 
   // Seed the default product if the table is empty

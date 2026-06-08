@@ -1,4 +1,4 @@
-type SheetTab = "Waitlist" | "Orders";
+type SheetTab = "Email List" | "Orders";
 
 export async function appendToSheet(tab: SheetTab, row: unknown[]): Promise<void> {
   const url = process.env.SHEETS_WEBHOOK_URL;

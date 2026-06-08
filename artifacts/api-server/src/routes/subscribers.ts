@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { db, subscribersTable, ordersTable, productsTable } from "@workspace/db";
 import { appendToSheet } from "../lib/sheets";
+import { locationFromIp } from "../lib/geo";
 
 const router = Router();
 
@@ -20,11 +21,19 @@ router.post("/subscribe", async (req, res) => {
       .returning();
     // Only sync to sheet on fresh inserts (skip dupes)
     if (inserted.length > 0) {
-      appendToSheet("Waitlist", [
-        new Date().toISOString(),
-        normalized,
-        "site",
-      ]).catch((err) => console.error("[subscribe] sheet append failed:", err));
+      // Geolocate, then append. Both are best-effort and must never block/throw
+      // the response — fire and forget. Email List columns:
+      // Timestamp | Email | Location | Status
+      locationFromIp(req.ip)
+        .then((location) =>
+          appendToSheet("Email List", [
+            new Date().toISOString(),
+            normalized,
+            location,
+            "Member",
+          ]),
+        )
+        .catch((err) => console.error("[subscribe] sheet append failed:", err));
     }
     res.json({ ok: true });
   } catch {
@@ -58,30 +67,53 @@ router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
     .select()
     .from(subscribersTable)
     .orderBy(subscribersTable.subscribedAt);
+  // Email List: Timestamp | Email | Location | Status
+  // (Location is blank for backfill — no IP captured at original signup time.)
   for (const s of subs) {
-    await appendToSheet("Waitlist", [
+    await appendToSheet("Email List", [
       s.subscribedAt.toISOString(),
       s.email,
-      "site",
+      "",
+      "Member",
     ]);
   }
 
   const orders = await db.select().from(ordersTable).orderBy(ordersTable.createdAt);
   const products = await db.select().from(productsTable);
   const titleById = new Map(products.map((p) => [p.id, p.title]));
+  // Orders columns (best-effort from DB — phone, payment intent, and split
+  // address fields aren't stored, so they're blank on backfilled rows):
+  // Timestamp | Order ID | Email | Order Count | Phone | Name | Item | Subtotal |
+  // Shipping | Tax | Tax Rate | Total | Currency | Ship To Name | Address 1 |
+  // Address 2 | City | State | ZIP | Country | Payment Intent
   for (const o of orders) {
+    const taxableBase = o.subtotalCents + o.shippingCents;
+    const taxRate =
+      o.taxCents > 0 && taxableBase > 0
+        ? `${((o.taxCents / taxableBase) * 100).toFixed(2)}%`
+        : "";
     await appendToSheet("Orders", [
       o.createdAt.toISOString(),
-      o.customerName ?? "",
+      o.stripeSessionId,
       o.customerEmail,
-      o.productId != null ? titleById.get(o.productId) ?? "" : "",
       o.quantity,
+      "",
+      o.customerName ?? "",
+      o.productId != null ? titleById.get(o.productId) ?? "" : "",
       (o.subtotalCents / 100).toFixed(2),
       (o.shippingCents / 100).toFixed(2),
-      o.shippingMethod ?? "",
+      (o.taxCents / 100).toFixed(2),
+      taxRate,
       (o.totalCents / 100).toFixed(2),
+      "USD",
+      o.customerName ?? "",
       o.shippingAddress ?? "",
-      o.stripeSessionId,
+      "",
+      "",
+      "",
+      "",
+      "",
+      "",
     ]);
   }
 

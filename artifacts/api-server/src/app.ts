@@ -6,7 +6,11 @@ import { handleStripeWebhook } from "./routes/webhooks";
 
 const app: Express = express();
 
-app.use(cors());
+// Behind Railway's proxy — trust X-Forwarded-For so req.ip is the real client IP
+// (used for Email Signups geolocation).
+app.set("trust proxy", true);
+
+app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:5173" }));
 
 // Stripe webhook needs the raw request body for signature verification.
 // Must be mounted BEFORE express.json() so the body isn't parsed first.
