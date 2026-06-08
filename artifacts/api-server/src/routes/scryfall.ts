@@ -2,6 +2,15 @@ import { Router } from "express";
 
 const router = Router();
 
+function requireAdmin(req: any, res: any, next: any) {
+  const key = req.headers["x-admin-key"];
+  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
+    res.status(401).json({ error: "Unauthorized" });
+    return;
+  }
+  next();
+}
+
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
 function titleCase(s: string) {
@@ -650,7 +659,7 @@ router.post("/lookup/tcgplayer", async (req, res) => {
 });
 
 // Restyle intel report in the TTD brand voice using Claude
-router.post("/intel-report/restyle", async (req, res) => {
+router.post("/intel-report/restyle", requireAdmin, async (req, res) => {
   const { intelReport, productTitle } = req.body as { intelReport?: string; productTitle?: string };
   if (!intelReport) { res.status(400).json({ error: "intelReport required" }); return; }
 
@@ -712,7 +721,7 @@ Write the intel report now:`,
 });
 
 // Remove background from an image URL using remove.bg
-router.post("/remove-background", async (req, res) => {
+router.post("/remove-background", requireAdmin, async (req, res) => {
   const { imageUrl } = req.body as { imageUrl?: string };
   if (!imageUrl) { res.status(400).json({ error: "imageUrl required" }); return; }
 
