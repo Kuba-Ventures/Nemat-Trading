@@ -80,8 +80,15 @@ jobs:
           echo "Parsed verdict: '${verdict:-<none>}'"
 
           if [ "$verdict" = "VERDICT: APPROVE-LOWRISK" ]; then
-            echo "Low-risk — enabling auto-merge (squash)."
-            gh pr merge "$PR" --squash --auto
+            # PHASE 2 (soak): observe-only. Label what the factory WOULD auto-merge,
+            # but leave the merge to a human so we can watch for escapes.
+            echo "APPROVE-LOWRISK — Phase 2 soak: labeling, not merging."
+            gh label create auto-merge-eligible --color 0E8A16 \
+              --description "Factory would auto-merge (Phase 2 soak: human merges)" 2>/dev/null || true
+            gh pr edit "$PR" --add-label auto-merge-eligible
+            # PHASE 3: after a clean two-week soak, replace the two gh-label lines
+            # above with the real action:
+            #   gh pr merge "$PR" --squash --auto
           else
             echo "Escalating to a human."
             gh label create escalated --color B60205 \
