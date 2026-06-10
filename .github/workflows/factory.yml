@@ -1,8 +1,9 @@
 name: factory
 
 # Supervised PR factory. Two required checks:
-#   factory-tests  — typecheck gate (this repo has no test suite yet; typecheck builds
-#                    the shared libs and typechecks every artifact, our best signal today)
+#   factory-tests  — typecheck gate (builds the shared libs and typechecks every
+#                    artifact) plus any package-level test suites that exist
+#                    (`pnpm -r test`, run only where a `test` script is present)
 #   factory-review — runs the vendored pr-reviewer agent; auto-merges only on
 #                    APPROVE-LOWRISK, otherwise labels the PR `escalated` for a human.
 on:
@@ -29,6 +30,8 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: Typecheck (factory gate)
         run: pnpm run typecheck
+      - name: Tests (factory gate)
+        run: pnpm -r --if-present run test
 
   factory-review:
     needs: factory-tests
