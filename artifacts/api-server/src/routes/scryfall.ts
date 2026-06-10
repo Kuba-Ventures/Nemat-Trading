@@ -1,4 +1,5 @@
 import { Router } from "express";
+import { pickBuyBoxPrice } from "../lib/tcg-pricing";
 
 const router = Router();
 
@@ -77,8 +78,10 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
   // sorted by price ascending, excluding presale listings.
   if (productId) {
     // 1. Search API — fetch listings sorted by price, presale excluded.
-    //    Prefer free-shipping listings (shippingPrice === 0, shown as "shipping: included"
-    //    on TCGPlayer) since those are all-in prices with no hidden shipping costs.
+    //    Match TCGPlayer's headline "promoted listing" price: the buy box is won
+    //    by the listing with the lowest all-in cost (item price + shipping), NOT the
+    //    lowest item price. We pick that listing and report its item price — the exact
+    //    number shown in TCGPlayer's buy box headline (with "shipping: included" when free).
     try {
       const searchRes = await fetch(
         `https://mp-search-api.tcgplayer.com/v1/product/${productId}/listings`,
@@ -101,13 +104,9 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
       if (searchRes.ok) {
         const searchData = await searchRes.json() as any;
         const results: any[] = searchData?.results?.[0]?.results ?? [];
-        // Prefer the lowest free-shipping listing ("shipping: included" on TCGPlayer)
-        const freeShipping = results.filter((r: any) => r.shippingPrice === 0 || r.rankedShippingPrice === 0);
-        const candidates = freeShipping.length > 0 ? freeShipping : results;
-        for (const item of candidates) {
-          const n = typeof item.price === "number" ? item.price : parseFloat(item.price);
-          if (!isNaN(n) && n > 0) { lowestPrice = n.toFixed(2); break; }
-        }
+        // Match TCGPlayer's headline by picking the buy-box winner (lowest
+        // delivered cost). Logic lives in pickBuyBoxPrice so it can be unit-tested.
+        lowestPrice = pickBuyBoxPrice(results) ?? lowestPrice;
       }
     } catch {}
 
