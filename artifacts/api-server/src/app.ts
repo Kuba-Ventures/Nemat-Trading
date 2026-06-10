@@ -10,7 +10,13 @@ const app: Express = express();
 // (used for Email Signups geolocation).
 app.set("trust proxy", true);
 
-app.use(cors({ origin: process.env.FRONTEND_URL ?? "http://localhost:5173" }));
+// FRONTEND_URL may be a comma-separated list so apex + www + preview origins
+// are all allowed (e.g. "https://www.tommytopdecker.com,https://tommytopdecker.com").
+const allowedOrigins = (process.env.FRONTEND_URL ?? "http://localhost:5173")
+  .split(",")
+  .map((o) => o.trim())
+  .filter(Boolean);
+app.use(cors({ origin: allowedOrigins }));
 
 // Stripe webhook needs the raw request body for signature verification.
 // Must be mounted BEFORE express.json() so the body isn't parsed first.
