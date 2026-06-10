@@ -59,6 +59,13 @@ async function migrate() {
       email TEXT NOT NULL UNIQUE,
       subscribed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+
+    -- Lock these tables down from Supabase's public Data API (anon key).
+    -- We connect as the postgres role, which bypasses RLS, so the app is
+    -- unaffected. With RLS on and no policies, the Data API returns nothing.
+    ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE orders      ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE subscribers ENABLE ROW LEVEL SECURITY;
   `);
 
   // Seed the default product if the table is empty
