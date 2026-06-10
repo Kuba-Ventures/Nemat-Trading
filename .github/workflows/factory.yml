@@ -1,0 +1,91 @@
+name: factory
+
+# Supervised PR factory. Two required checks:
+#   factory-tests  — typecheck gate (this repo has no test suite yet; typecheck builds
+#                    the shared libs and typechecks every artifact, our best signal today)
+#   factory-review — runs the vendored pr-reviewer agent; auto-merges only on
+#                    APPROVE-LOWRISK, otherwise labels the PR `escalated` for a human.
+on:
+  pull_request:
+    types: [opened, synchronize, reopened, ready_for_review]
+
+concurrency:
+  group: factory-${{ github.event.pull_request.number }}
+  cancel-in-progress: true
+
+jobs:
+  factory-tests:
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: pnpm/action-setup@v4
+        with:
+          version: 10.33.0
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck (factory gate)
+        run: pnpm run typecheck
+
+  factory-review:
+    needs: factory-tests
+    if: github.event.pull_request.draft == false
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      pull-requests: write
+      id-token: write
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Factory review
+        uses: anthropics/claude-code-action@v1
+        with:
+          claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
+          prompt: |
+            You are running in CI for pull request #${{ github.event.pull_request.number }}
+            in repo ${{ github.repository }}. The base branch is
+            "${{ github.event.pull_request.base.ref }}" and the factory test gate
+            (typecheck) has already PASSED for this PR — treat tests as green.
+
+            Use the **pr-reviewer** subagent (defined in .claude/agents/pr-reviewer.md) to
+            review this PR against the merge policy in CLAUDE.md. Then post your review as a
+            comment on this PR using:
+              gh pr comment ${{ github.event.pull_request.number }} --body "<your review>"
+            The review's final line MUST be exactly one of:
+              VERDICT: APPROVE-LOWRISK
+              VERDICT: ESCALATE — <one concrete reason>
+          claude_args: |
+            --allowedTools "Read,Grep,Glob,Bash,Task"
+            --max-turns 25
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Enforce verdict
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          # Pull the most recent VERDICT line from this PR's comments.
+          verdict=$(gh pr view "$PR" --json comments \
+            -q '.comments[].body' \
+            | grep -oE 'VERDICT: (APPROVE-LOWRISK|ESCALATE)' \
+            | tail -1 || true)
+          echo "Parsed verdict: '${verdict:-<none>}'"
+
+          if [ "$verdict" = "VERDICT: APPROVE-LOWRISK" ]; then
+            echo "Low-risk — enabling auto-merge (squash)."
+            gh pr merge "$PR" --squash --auto
+          else
+            echo "Escalating to a human."
+            gh label create escalated --color B60205 \
+              --description "Factory routed this PR to a human" 2>/dev/null || true
+            gh pr edit "$PR" --add-label escalated
+            # Leave the check green so a human can merge manually; do not auto-merge.
+          fi

@@ -1,6 +1,8 @@
 import { pgTable, serial, text, integer, boolean, timestamp } from "drizzle-orm/pg-core";
 import { createInsertSchema } from "drizzle-zod";
-import { z } from "zod";
+// drizzle-zod 0.8.x emits zod v4 schema types; import z from the matching v4
+// entrypoint (zod 3.25 ships both) so z.infer aligns with createInsertSchema's output.
+import { z } from "zod/v4";
 
 export const productsTable = pgTable("products", {
   id: serial("id").primaryKey(),
