@@ -99,7 +99,7 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
         }
       );
       if (searchRes.ok) {
-        const searchData = await searchRes.json();
+        const searchData = await searchRes.json() as any;
         const results: any[] = searchData?.results?.[0]?.results ?? [];
         // Prefer the lowest free-shipping listing ("shipping: included" on TCGPlayer)
         const freeShipping = results.filter((r: any) => r.shippingPrice === 0 || r.rankedShippingPrice === 0);
@@ -238,7 +238,7 @@ async function scrapeProductPage(url: string, productId: string | null): Promise
         { headers: mpHeaders }
       );
       if (r.ok) {
-        const data = await r.json();
+        const data = await r.json() as any;
         const results: any[] = data?.results ?? (Array.isArray(data) ? data : []);
         for (const item of results) {
           const name = (item.name ?? item.displayName ?? "").toLowerCase();
@@ -266,7 +266,7 @@ async function scrapeProductPage(url: string, productId: string | null): Promise
           { headers: mpHeaders }
         );
         if (r.ok) {
-          const data = await r.json();
+          const data = await r.json() as any;
           const results: any[] = data?.results ?? (Array.isArray(data) ? data : [data]);
           for (const item of results) {
             const desc = item.description ?? item.productDescription ?? item.longDescription ?? null;
