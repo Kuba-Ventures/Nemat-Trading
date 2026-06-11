@@ -3,6 +3,7 @@ import RightContentPanel from "@/components/RightContentPanel";
 import CheckoutPage from "@/pages/checkout";
 import SuccessPage from "@/pages/success";
 import AdminPage from "@/pages/admin";
+import AccountPage from "@/pages/account";
 import { product } from "@/data/product";
 
 function HomePage() {
@@ -18,10 +19,10 @@ function HomePage() {
         </div>
         <div className="w-12 md:w-32 flex justify-end">
           <a
-            href="/admin"
+            href="/account"
             className="px-2 py-1 md:px-4 md:py-2 bg-white text-black text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] rounded hover:bg-gray-200 transition-colors"
           >
-            Admin
+            Account
           </a>
         </div>
       </header>
@@ -37,6 +38,7 @@ export default function App() {
   const path = window.location.pathname;
 
   if (path === "/admin") return <AdminPage />;
+  if (path === "/account") return <AccountPage />;
   if (path === "/checkout") return <CheckoutPage />;
   if (path === "/success") return <SuccessPage />;
 
