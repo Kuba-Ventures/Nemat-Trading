@@ -40,5 +40,8 @@ export function orderRowFromSession(full: Stripe.Checkout.Session) {
     taxCents,
     totalCents,
     shippingAddress: formattedAddress || null,
+    // Use the real Stripe purchase time, not DB insert time — so backfilled
+    // orders carry their true date. (`created` is a unix-seconds timestamp.)
+    createdAt: new Date(full.created * 1000),
   };
 }
