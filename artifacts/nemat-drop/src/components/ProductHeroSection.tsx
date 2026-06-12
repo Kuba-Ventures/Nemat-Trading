@@ -97,13 +97,14 @@ export default function ProductHeroSection() {
 
   return (
     <section className="pb-10">
-      <div className="flex items-center gap-3 mb-6">
+      {/* The status pill doubles as a discreet admin entry (also reachable at /admin). */}
+      <a href="/admin" aria-label="Admin" className="flex items-center gap-3 mb-6 w-fit group">
         <span className="relative flex h-2 w-2">
           <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60"></span>
           <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
         </span>
-        <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500">{staticProduct.status}</span>
-      </div>
+        <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500 group-hover:text-gray-300 transition-colors">{staticProduct.status}</span>
+      </a>
 
       <h1 className="text-3xl md:text-4xl font-bold text-white leading-tight tracking-tight mb-1">{title}</h1>
       <p className="text-base text-gray-500 uppercase tracking-[0.2em] mb-8">{subtitle}</p>

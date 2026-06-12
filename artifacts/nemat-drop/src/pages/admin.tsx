@@ -28,7 +28,23 @@ type Product = {
   createdAt: string;
 };
 
-type View = "list" | "new" | "edit" | "subscribers";
+type View = "list" | "new" | "edit" | "waitlist" | "orders";
+
+type AdminOrder = {
+  id: number;
+  date: string;
+  email: string;
+  name: string | null;
+  item: string;
+  quantity: number;
+  subtotalCents: number;
+  shippingCents: number;
+  taxCents: number;
+  totalCents: number;
+  shippingMethod: string | null;
+  shippingAddress: string | null;
+  stripeSessionId: string;
+};
 
 function sku(id: number) {
   return `NMT-${String(id).padStart(3, "0")}`;
@@ -51,11 +67,12 @@ function StatusBadge({ product }: { product: Product }) {
 
 // ─── Product List ─────────────────────────────────────────────────────────────
 
-function ProductList({ adminKey, onEdit, onNew, onSubscribers }: {
+function ProductList({ adminKey, onEdit, onNew, onWaitlist, onOrders }: {
   adminKey: string;
   onEdit: (p: Product) => void;
   onNew: () => void;
-  onSubscribers: () => void;
+  onWaitlist: () => void;
+  onOrders: () => void;
 }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -94,10 +111,16 @@ function ProductList({ adminKey, onEdit, onNew, onSubscribers }: {
         <div className="flex items-center gap-4">
           <a href="/" className="text-xs text-gray-500 hover:text-white transition-colors">← Storefront</a>
           <button
-            onClick={onSubscribers}
+            onClick={onOrders}
             className="text-xs text-gray-500 hover:text-white transition-colors"
           >
-            Subscribers
+            Orders
+          </button>
+          <button
+            onClick={onWaitlist}
+            className="text-xs text-gray-500 hover:text-white transition-colors"
+          >
+            Waitlist
           </button>
           <button
             onClick={onNew}
@@ -979,7 +1002,7 @@ function SubscriberList({ adminKey, onBack }: { adminKey: string; onBack: () => 
       <div className="flex items-center justify-between mb-8">
         <div>
           <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-1">Nemat Trading</div>
-          <h1 className="text-2xl font-bold text-white">Subscribers</h1>
+          <h1 className="text-2xl font-bold text-white">Waitlist</h1>
         </div>
         <div className="flex items-center gap-4">
           <button onClick={onBack} className="text-xs text-gray-500 hover:text-white transition-colors">← Products</button>
@@ -1005,7 +1028,7 @@ function SubscriberList({ adminKey, onBack }: { adminKey: string; onBack: () => 
 
       {!loading && !loadError && subscribers.length === 0 && (
         <div className="text-center py-16 border border-white/[0.06] rounded">
-          <p className="text-gray-600 text-sm">No subscribers yet.</p>
+          <p className="text-gray-600 text-sm">No waitlist signups yet.</p>
         </div>
       )}
 
@@ -1024,6 +1047,112 @@ function SubscriberList({ adminKey, onBack }: { adminKey: string; onBack: () => 
               <span className="text-xs text-gray-500 whitespace-nowrap">
                 {new Date(s.subscribedAt).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
               </span>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ─── Orders ─────────────────────────────────────────────────────────────────
+
+function money(cents: number) {
+  return `$${(cents / 100).toFixed(2)}`;
+}
+
+function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void }) {
+  const [orders, setOrders] = useState<AdminOrder[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [loadError, setLoadError] = useState<string | null>(null);
+  const [expanded, setExpanded] = useState<number | null>(null);
+
+  async function load() {
+    setLoading(true);
+    setLoadError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/orders`, { headers: { "x-admin-key": adminKey } });
+      if (!res.ok) throw new Error(`API returned ${res.status}`);
+      setOrders(await res.json());
+    } catch (err: any) {
+      setLoadError(err.message ?? "Failed to load orders");
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { load(); }, []);
+
+  const revenueCents = orders.reduce((sum, o) => sum + o.totalCents, 0);
+
+  return (
+    <div>
+      <div className="flex items-center justify-between mb-8">
+        <div>
+          <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-1">Nemat Trading</div>
+          <h1 className="text-2xl font-bold text-white">Orders</h1>
+        </div>
+        <div className="flex items-center gap-4">
+          <button onClick={onBack} className="text-xs text-gray-500 hover:text-white transition-colors">← Products</button>
+          {orders.length > 0 && (
+            <span className="text-xs text-gray-500">
+              {orders.length} {orders.length === 1 ? "order" : "orders"} · {money(revenueCents)}
+            </span>
+          )}
+        </div>
+      </div>
+
+      {loading && <p className="text-gray-600 text-sm text-center py-12">Loading...</p>}
+      {loadError && (
+        <div className="text-center py-12 border border-red-400/20 rounded">
+          <p className="text-red-400 text-sm mb-2">Could not load orders</p>
+          <p className="text-gray-600 text-xs font-mono">{loadError}</p>
+          <button onClick={load} className="mt-4 text-xs text-cyan-400 hover:text-cyan-300 transition-colors">Retry</button>
+        </div>
+      )}
+
+      {!loading && !loadError && orders.length === 0 && (
+        <div className="text-center py-16 border border-white/[0.06] rounded">
+          <p className="text-gray-600 text-sm">No orders yet.</p>
+        </div>
+      )}
+
+      {!loading && orders.length > 0 && (
+        <div className="border border-white/[0.06] rounded overflow-hidden">
+          <div className="grid grid-cols-[auto_1fr_1fr_auto_auto] gap-4 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Date</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Item</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Customer</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 text-center">Qty</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 text-right">Total</span>
+          </div>
+          {orders.map((o, i) => (
+            <div key={o.id} className={i < orders.length - 1 ? "border-b border-white/[0.04]" : ""}>
+              <button
+                onClick={() => setExpanded(expanded === o.id ? null : o.id)}
+                className="w-full grid grid-cols-[auto_1fr_1fr_auto_auto] gap-4 px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+              >
+                <span className="text-xs text-gray-500 whitespace-nowrap">
+                  {new Date(o.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
+                </span>
+                <span className="text-sm text-white truncate">{o.item}</span>
+                <span className="text-xs text-gray-400 font-mono truncate">{o.email}</span>
+                <span className="text-sm text-gray-300 text-center">{o.quantity}</span>
+                <span className="text-sm text-cyan-400 font-semibold text-right whitespace-nowrap">{money(o.totalCents)}</span>
+              </button>
+              {expanded === o.id && (
+                <div className="px-5 pb-4 pt-1 text-xs text-gray-400 space-y-1 bg-white/[0.01]">
+                  {o.name && <div><span className="text-gray-600">Name:</span> {o.name}</div>}
+                  {o.shippingAddress && <div><span className="text-gray-600">Ship to:</span> {o.shippingAddress}</div>}
+                  {o.shippingMethod && <div><span className="text-gray-600">Shipping:</span> {o.shippingMethod}</div>}
+                  <div className="flex flex-wrap gap-x-4 pt-1">
+                    <span><span className="text-gray-600">Subtotal:</span> {money(o.subtotalCents)}</span>
+                    <span><span className="text-gray-600">Shipping:</span> {money(o.shippingCents)}</span>
+                    <span><span className="text-gray-600">Tax:</span> {money(o.taxCents)}</span>
+                  </div>
+                  <div className="text-gray-600 font-mono break-all pt-1">{o.stripeSessionId}</div>
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -1078,7 +1207,8 @@ export default function AdminPage() {
             adminKey={adminKey}
             onEdit={(p) => { setEditingProduct(p); setView("edit"); }}
             onNew={() => { setEditingProduct(null); setView("new"); }}
-            onSubscribers={() => setView("subscribers")}
+            onWaitlist={() => setView("waitlist")}
+            onOrders={() => setView("orders")}
           />
         )}
         {(view === "new" || view === "edit") && (
@@ -1089,8 +1219,14 @@ export default function AdminPage() {
             onSaved={() => setView("list")}
           />
         )}
-        {view === "subscribers" && (
+        {view === "waitlist" && (
           <SubscriberList
+            adminKey={adminKey}
+            onBack={() => setView("list")}
+          />
+        )}
+        {view === "orders" && (
+          <OrderList
             adminKey={adminKey}
             onBack={() => setView("list")}
           />

@@ -7,6 +7,7 @@ import uploadRouter from "./upload";
 import subscribersRouter from "./subscribers";
 import shippingRouter from "./shipping";
 import accountRouter from "./account";
+import adminOrdersRouter from "./orders";
 
 const router: IRouter = Router();
 
@@ -18,5 +19,6 @@ router.use(uploadRouter);
 router.use(subscribersRouter);
 router.use(shippingRouter);
 router.use(accountRouter);
+router.use(adminOrdersRouter);
 
 export default router;
