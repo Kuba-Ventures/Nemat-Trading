@@ -1066,6 +1066,8 @@ function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void 
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [expanded, setExpanded] = useState<number | null>(null);
+  const [syncing, setSyncing] = useState(false);
+  const [syncMsg, setSyncMsg] = useState("");
 
   async function load() {
     setLoading(true);
@@ -1078,6 +1080,25 @@ function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void 
       setLoadError(err.message ?? "Failed to load orders");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function syncFromStripe() {
+    setSyncing(true);
+    setSyncMsg("");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/backfill-orders`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API returned ${res.status}`);
+      setSyncMsg(`Imported ${data.inserted} · scanned ${data.scanned}`);
+      await load();
+    } catch (err: any) {
+      setSyncMsg(err.message ?? "Sync failed");
+    } finally {
+      setSyncing(false);
     }
   }
 
@@ -1099,6 +1120,14 @@ function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void 
               {orders.length} {orders.length === 1 ? "order" : "orders"} · {money(revenueCents)}
             </span>
           )}
+          {syncMsg && <span className="text-xs text-gray-500">{syncMsg}</span>}
+          <button
+            onClick={syncFromStripe}
+            disabled={syncing}
+            className="rounded border border-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-50"
+          >
+            {syncing ? "Syncing…" : "Sync from Stripe"}
+          </button>
         </div>
       </div>
 
