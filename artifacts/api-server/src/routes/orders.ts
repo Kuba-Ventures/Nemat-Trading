@@ -64,9 +64,16 @@ router.post("/admin/backfill-orders", requireAdmin, async (_req, res) => {
 
   let scanned = 0;
   let inserted = 0;
+  let updated = 0;
   let skipped = 0;
 
   try {
+    // Existing session ids, so we can report inserted vs. updated.
+    const existingRows = await db
+      .select({ sid: ordersTable.stripeSessionId })
+      .from(ordersTable);
+    const existing = new Set(existingRows.map((r) => r.sid));
+
     // Walk every Checkout Session (auto-paginates).
     for await (const session of stripe.checkout.sessions.list({ limit: 100 })) {
       scanned++;
@@ -78,18 +85,20 @@ router.post("/admin/backfill-orders", requireAdmin, async (_req, res) => {
       const full = await stripe.checkout.sessions.retrieve(session.id, {
         expand: ["line_items", "shipping_cost.shipping_rate", "total_details.breakdown"],
       });
-      const result = await db
+      const row = orderRowFromSession(full);
+      // Upsert: insert new orders, and reconcile existing ones with Stripe
+      // (notably the real purchase date) so re-running fixes prior imports.
+      await db
         .insert(ordersTable)
-        .values(orderRowFromSession(full))
-        .onConflictDoNothing()
-        .returning({ id: ordersTable.id });
-      if (result.length > 0) inserted++;
-      else skipped++;
+        .values(row)
+        .onConflictDoUpdate({ target: ordersTable.stripeSessionId, set: row });
+      if (existing.has(full.id)) updated++;
+      else inserted++;
     }
-    res.json({ scanned, inserted, skipped });
+    res.json({ scanned, inserted, updated, skipped });
   } catch (err: any) {
     console.error("[admin/backfill-orders] failed:", err);
-    res.status(500).json({ error: err?.message ?? "Backfill failed", scanned, inserted });
+    res.status(500).json({ error: err?.message ?? "Backfill failed", scanned, inserted, updated });
   }
 });
 

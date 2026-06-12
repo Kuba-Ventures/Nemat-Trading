@@ -1093,7 +1093,7 @@ function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void 
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? `API returned ${res.status}`);
-      setSyncMsg(`Imported ${data.inserted} · scanned ${data.scanned}`);
+      setSyncMsg(`Imported ${data.inserted}, updated ${data.updated} · scanned ${data.scanned}`);
       await load();
     } catch (err: any) {
       setSyncMsg(err.message ?? "Sync failed");
