@@ -65,14 +65,37 @@ function StatusBadge({ product }: { product: Product }) {
   return <span className="text-[10px] uppercase tracking-[0.15em] text-cyan-400 border border-cyan-400/20 px-2 py-0.5 rounded">Live</span>;
 }
 
+// ─── Shared admin nav ─────────────────────────────────────────────────────────
+
+function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) => void }) {
+  const tab = (key: View, label: string) => (
+    <button
+      onClick={() => onNavigate(key)}
+      className={`text-xs uppercase tracking-[0.15em] transition-colors ${
+        active === key ? "text-cyan-400" : "text-gray-500 hover:text-white"
+      }`}
+    >
+      {label}
+    </button>
+  );
+  return (
+    <div className="flex items-center justify-between mb-10">
+      <a href="/" className="text-xs text-gray-500 hover:text-white transition-colors">← Storefront</a>
+      <div className="flex items-center gap-6">
+        {tab("list", "Products")}
+        {tab("orders", "Orders")}
+        {tab("waitlist", "Waitlist")}
+      </div>
+    </div>
+  );
+}
+
 // ─── Product List ─────────────────────────────────────────────────────────────
 
-function ProductList({ adminKey, onEdit, onNew, onWaitlist, onOrders }: {
+function ProductList({ adminKey, onEdit, onNew }: {
   adminKey: string;
   onEdit: (p: Product) => void;
   onNew: () => void;
-  onWaitlist: () => void;
-  onOrders: () => void;
 }) {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
@@ -108,27 +131,12 @@ function ProductList({ adminKey, onEdit, onNew, onWaitlist, onOrders }: {
           <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-1">Nemat Trading</div>
           <h1 className="text-2xl font-bold text-white">Products</h1>
         </div>
-        <div className="flex items-center gap-4">
-          <a href="/" className="text-xs text-gray-500 hover:text-white transition-colors">← Storefront</a>
-          <button
-            onClick={onOrders}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
-          >
-            Orders
-          </button>
-          <button
-            onClick={onWaitlist}
-            className="text-xs text-gray-500 hover:text-white transition-colors"
-          >
-            Waitlist
-          </button>
-          <button
-            onClick={onNew}
-            className="rounded bg-cyan-400 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.2em] text-black hover:bg-cyan-300 transition-colors"
-          >
-            + New Product
-          </button>
-        </div>
+        <button
+          onClick={onNew}
+          className="rounded bg-cyan-400 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.2em] text-black hover:bg-cyan-300 transition-colors"
+        >
+          + New Product
+        </button>
       </div>
 
       {loading && <p className="text-gray-600 text-sm text-center py-12">Loading...</p>}
@@ -967,7 +975,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
 
 type Subscriber = { id: number; email: string; subscribedAt: string };
 
-function SubscriberList({ adminKey, onBack }: { adminKey: string; onBack: () => void }) {
+function SubscriberList({ adminKey }: { adminKey: string }) {
   const [subscribers, setSubscribers] = useState<Subscriber[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1005,7 +1013,6 @@ function SubscriberList({ adminKey, onBack }: { adminKey: string; onBack: () => 
           <h1 className="text-2xl font-bold text-white">Waitlist</h1>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-xs text-gray-500 hover:text-white transition-colors">← Products</button>
           {subscribers.length > 0 && (
             <button
               onClick={copyAll}
@@ -1061,7 +1068,7 @@ function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
-function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void }) {
+function OrderList({ adminKey }: { adminKey: string }) {
   const [orders, setOrders] = useState<AdminOrder[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
@@ -1114,7 +1121,6 @@ function OrderList({ adminKey, onBack }: { adminKey: string; onBack: () => void 
           <h1 className="text-2xl font-bold text-white">Orders</h1>
         </div>
         <div className="flex items-center gap-4">
-          <button onClick={onBack} className="text-xs text-gray-500 hover:text-white transition-colors">← Products</button>
           {orders.length > 0 && (
             <span className="text-xs text-gray-500">
               {orders.length} {orders.length === 1 ? "order" : "orders"} · {money(revenueCents)}
@@ -1231,13 +1237,14 @@ export default function AdminPage() {
   return (
     <main className="min-h-screen bg-black text-white px-6 py-10">
       <div className="mx-auto max-w-4xl">
+        {(view === "list" || view === "orders" || view === "waitlist") && (
+          <AdminNav active={view} onNavigate={setView} />
+        )}
         {view === "list" && (
           <ProductList
             adminKey={adminKey}
             onEdit={(p) => { setEditingProduct(p); setView("edit"); }}
             onNew={() => { setEditingProduct(null); setView("new"); }}
-            onWaitlist={() => setView("waitlist")}
-            onOrders={() => setView("orders")}
           />
         )}
         {(view === "new" || view === "edit") && (
@@ -1248,18 +1255,8 @@ export default function AdminPage() {
             onSaved={() => setView("list")}
           />
         )}
-        {view === "waitlist" && (
-          <SubscriberList
-            adminKey={adminKey}
-            onBack={() => setView("list")}
-          />
-        )}
-        {view === "orders" && (
-          <OrderList
-            adminKey={adminKey}
-            onBack={() => setView("list")}
-          />
-        )}
+        {view === "waitlist" && <SubscriberList adminKey={adminKey} />}
+        {view === "orders" && <OrderList adminKey={adminKey} />}
       </div>
     </main>
   );
