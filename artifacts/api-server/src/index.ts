@@ -49,10 +49,15 @@ async function migrate() {
       subtotal_cents INTEGER NOT NULL,
       shipping_cents INTEGER NOT NULL,
       shipping_method TEXT,
+      tax_cents INTEGER NOT NULL DEFAULT 0,
       total_cents INTEGER NOT NULL,
       shipping_address TEXT,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    -- tax_cents was added to the schema/webhook in f6e8009 but never to this
+    -- bootstrap, so existing DBs lack the column — the webhook INSERT and the
+    -- account-orders SELECT both reference it and 500. Backfill it idempotently.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_cents INTEGER NOT NULL DEFAULT 0;
 
     CREATE TABLE IF NOT EXISTS subscribers (
       id SERIAL PRIMARY KEY,
