@@ -16,6 +16,8 @@ type Order = {
   shippingMethod: string | null;
 };
 
+type Mode = "signin" | "signup" | "reset";
+
 const money = (cents: number) =>
   (cents / 100).toLocaleString("en-US", { style: "currency", currency: "USD" });
 
@@ -25,6 +27,12 @@ const formatDate = (iso: string) =>
     month: "short",
     day: "numeric",
   });
+
+const inputClass =
+  "rounded bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-400/60";
+const primaryBtn =
+  "rounded bg-cyan-400 px-8 py-3 text-xs font-bold uppercase tracking-[0.25em] text-black hover:bg-cyan-300 transition-colors disabled:opacity-50";
+const linkBtn = "text-xs text-gray-500 hover:text-cyan-400 transition-colors";
 
 function Shell({ children }: { children: React.ReactNode }) {
   return (
@@ -51,18 +59,21 @@ function Shell({ children }: { children: React.ReactNode }) {
 export default function AccountPage() {
   const [session, setSession] = useState<Session | null>(null);
   const [loading, setLoading] = useState(true);
+  const [recovering, setRecovering] = useState(false); // arrived via password-reset link
 
-  // Sign-in form state
+  // Auth form state
+  const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
-  const [sending, setSending] = useState(false);
-  const [sent, setSent] = useState(false);
+  const [password, setPassword] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [notice, setNotice] = useState(""); // "check your email"-style confirmations
   const [error, setError] = useState("");
 
   // Orders state
   const [orders, setOrders] = useState<Order[] | null>(null);
   const [ordersError, setOrdersError] = useState("");
 
-  // Track the auth session (and pick up the magic-link redirect on load).
+  // Track the auth session (and pick up magic-link / reset redirects on load).
   useEffect(() => {
     if (!supabaseConfigured) {
       setLoading(false);
@@ -72,15 +83,16 @@ export default function AccountPage() {
       setSession(data.session);
       setLoading(false);
     });
-    const { data: sub } = supabase.auth.onAuthStateChange((_event, s) => {
+    const { data: sub } = supabase.auth.onAuthStateChange((event, s) => {
       setSession(s);
+      if (event === "PASSWORD_RECOVERY") setRecovering(true);
     });
     return () => sub.subscription.unsubscribe();
   }, []);
 
-  // Load order history once signed in.
+  // Load order history once signed in (but not while setting a new password).
   useEffect(() => {
-    if (!session) {
+    if (!session || recovering) {
       setOrders(null);
       return;
     }
@@ -101,29 +113,93 @@ export default function AccountPage() {
     return () => {
       cancelled = true;
     };
-  }, [session]);
+  }, [session, recovering]);
 
-  async function sendMagicLink(e: React.FormEvent) {
+  function switchMode(next: Mode) {
+    setMode(next);
+    setError("");
+    setNotice("");
+    setPassword("");
+  }
+
+  async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     setError("");
-    setSending(true);
+    setNotice("");
+    setBusy(true);
+    const addr = email.trim();
+    const redirect = `${window.location.origin}/account`;
+
+    try {
+      if (mode === "signin") {
+        const { error: err } = await supabase.auth.signInWithPassword({
+          email: addr,
+          password,
+        });
+        if (err) throw err;
+        // session updates via onAuthStateChange
+      } else if (mode === "signup") {
+        const { data, error: err } = await supabase.auth.signUp({
+          email: addr,
+          password,
+          options: { emailRedirectTo: redirect },
+        });
+        if (err) throw err;
+        if (!data.session) {
+          setNotice(
+            `Account created. Check ${addr} for a confirmation link, then come back and sign in.`,
+          );
+        }
+      } else {
+        const { error: err } = await supabase.auth.resetPasswordForEmail(addr, {
+          redirectTo: redirect,
+        });
+        if (err) throw err;
+        setNotice(`If an account exists for ${addr}, a password reset link is on its way.`);
+      }
+    } catch (err: any) {
+      setError(err?.message ?? "Something went wrong. Please try again.");
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function sendMagicLink() {
+    setError("");
+    setNotice("");
+    if (!email.trim()) {
+      setError("Enter your email first.");
+      return;
+    }
+    setBusy(true);
     const { error: err } = await supabase.auth.signInWithOtp({
       email: email.trim(),
       options: { emailRedirectTo: `${window.location.origin}/account` },
     });
-    setSending(false);
+    setBusy(false);
+    if (err) setError(err.message);
+    else setNotice(`Check ${email.trim()} for a one-time sign-in link.`);
+  }
+
+  async function updatePassword(e: React.FormEvent) {
+    e.preventDefault();
+    setError("");
+    setBusy(true);
+    const { error: err } = await supabase.auth.updateUser({ password });
+    setBusy(false);
     if (err) {
       setError(err.message);
       return;
     }
-    setSent(true);
+    setRecovering(false);
+    setPassword("");
   }
 
   async function signOut() {
     await supabase.auth.signOut();
     setSession(null);
-    setSent(false);
-    setEmail("");
+    setPassword("");
+    setMode("signin");
   }
 
   if (!supabaseConfigured) {
@@ -145,41 +221,111 @@ export default function AccountPage() {
     );
   }
 
-  // ── Signed out: magic-link request form ───────────────────────────────
+  // ── Arrived from a password-reset link: set a new password ────────────
+  if (recovering) {
+    return (
+      <Shell>
+        <h1 className="text-3xl font-bold text-cyan-400 mb-3">Set a new password</h1>
+        <form onSubmit={updatePassword} className="flex flex-col gap-3 max-w-sm">
+          <input
+            type="password"
+            required
+            minLength={6}
+            value={password}
+            onChange={(e) => setPassword(e.target.value)}
+            placeholder="New password (min 6 characters)"
+            className={inputClass}
+          />
+          <button type="submit" disabled={busy} className={primaryBtn}>
+            {busy ? "Saving…" : "Save password"}
+          </button>
+          {error && <p className="text-red-400 text-xs">{error}</p>}
+        </form>
+      </Shell>
+    );
+  }
+
+  // ── Signed out: sign in / sign up / reset ─────────────────────────────
   if (!session) {
     return (
       <Shell>
-        <h1 className="text-3xl font-bold text-cyan-400 mb-3">Your Account</h1>
-        {sent ? (
-          <p className="text-gray-400 text-sm leading-relaxed">
-            Check your inbox — we sent a sign-in link to{" "}
-            <span className="text-white">{email}</span>. Click it to view your order history.
-            You can close this tab.
-          </p>
+        <h1 className="text-3xl font-bold text-cyan-400 mb-3">
+          {mode === "signup" ? "Create your account" : mode === "reset" ? "Reset password" : "Your Account"}
+        </h1>
+        <p className="text-gray-400 text-sm mb-6">
+          {mode === "signup"
+            ? "Use the same email you checkout with so your orders show up here."
+            : mode === "reset"
+              ? "Enter your email and we'll send a link to set a new password."
+              : "Sign in to see everything you've bought."}
+        </p>
+
+        {notice ? (
+          <div className="max-w-sm">
+            <p className="text-gray-300 text-sm leading-relaxed mb-4">{notice}</p>
+            <button onClick={() => switchMode("signin")} className={linkBtn}>
+              ← Back to sign in
+            </button>
+          </div>
         ) : (
           <>
-            <p className="text-gray-400 text-sm mb-6">
-              Enter your email and we'll send you a secure sign-in link — no password needed.
-              Sign in with the same email you used at checkout to see everything you've bought.
-            </p>
-            <form onSubmit={sendMagicLink} className="flex flex-col gap-3 max-w-sm">
+            <form onSubmit={handleSubmit} className="flex flex-col gap-3 max-w-sm">
               <input
                 type="email"
                 required
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="you@email.com"
-                className="rounded bg-white/[0.04] border border-white/10 px-4 py-3 text-sm text-white placeholder:text-gray-600 focus:outline-none focus:border-cyan-400/60"
+                autoComplete="email"
+                className={inputClass}
               />
-              <button
-                type="submit"
-                disabled={sending}
-                className="rounded bg-cyan-400 px-8 py-3 text-xs font-bold uppercase tracking-[0.25em] text-black hover:bg-cyan-300 transition-colors disabled:opacity-50"
-              >
-                {sending ? "Sending…" : "Email me a sign-in link"}
+              {mode !== "reset" && (
+                <input
+                  type="password"
+                  required
+                  minLength={6}
+                  value={password}
+                  onChange={(e) => setPassword(e.target.value)}
+                  placeholder={mode === "signup" ? "Create a password (min 6 characters)" : "Password"}
+                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  className={inputClass}
+                />
+              )}
+              <button type="submit" disabled={busy} className={primaryBtn}>
+                {busy
+                  ? "Working…"
+                  : mode === "signup"
+                    ? "Create account"
+                    : mode === "reset"
+                      ? "Send reset link"
+                      : "Sign in"}
               </button>
               {error && <p className="text-red-400 text-xs">{error}</p>}
             </form>
+
+            <div className="flex flex-col gap-2 mt-5 max-w-sm">
+              {mode === "signin" && (
+                <>
+                  <div className="flex justify-between">
+                    <button onClick={() => switchMode("signup")} className={linkBtn}>
+                      Create an account
+                    </button>
+                    <button onClick={() => switchMode("reset")} className={linkBtn}>
+                      Forgot password?
+                    </button>
+                  </div>
+                  <div className="border-t border-white/[0.06] my-2" />
+                  <button onClick={sendMagicLink} disabled={busy} className={linkBtn}>
+                    Email me a one-time sign-in link instead
+                  </button>
+                </>
+              )}
+              {mode !== "signin" && (
+                <button onClick={() => switchMode("signin")} className={linkBtn}>
+                  ← Back to sign in
+                </button>
+              )}
+            </div>
           </>
         )}
       </Shell>
