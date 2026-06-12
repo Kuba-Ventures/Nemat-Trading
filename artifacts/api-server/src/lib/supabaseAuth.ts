@@ -1,24 +1,8 @@
-import { createClient, type SupabaseClient } from "@supabase/supabase-js";
-
-// Single Supabase client used only to *verify* a caller's access token.
-// We use the anon key here — getUser(jwt) validates the token against Supabase
-// and returns the authenticated user, which is all we need on the backend.
-let cached: SupabaseClient | null = null;
-
-function client(): SupabaseClient {
-  if (cached) return cached;
-  const url = process.env.SUPABASE_URL;
-  const anonKey = process.env.SUPABASE_ANON_KEY;
-  if (!url || !anonKey) {
-    throw new Error(
-      "SUPABASE_URL and SUPABASE_ANON_KEY must be set to verify account tokens.",
-    );
-  }
-  cached = createClient(url, anonKey, {
-    auth: { persistSession: false, autoRefreshToken: false },
-  });
-  return cached;
-}
+// Validate a customer's Supabase access token WITHOUT pulling in the full
+// supabase-js client. The full client eagerly constructs a Realtime
+// (WebSocket) client, which throws on Node < 22 (Railway runs Node 18) where
+// there's no native WebSocket. We only need to verify a token, so we call the
+// GoTrue /auth/v1/user endpoint directly with native fetch.
 
 /**
  * Validate a Bearer token from the Authorization header and return the
@@ -33,7 +17,21 @@ export async function emailFromAuthHeader(
   const token = authHeader.slice("Bearer ".length).trim();
   if (!token) return null;
 
-  const { data, error } = await client().auth.getUser(token);
-  if (error || !data.user?.email) return null;
-  return data.user.email.trim().toLowerCase();
+  const url = process.env.SUPABASE_URL;
+  const anonKey = process.env.SUPABASE_ANON_KEY;
+  if (!url || !anonKey) {
+    throw new Error(
+      "SUPABASE_URL and SUPABASE_ANON_KEY must be set to verify account tokens.",
+    );
+  }
+
+  const base = url.replace(/\/+$/, ""); // tolerate a trailing slash
+  const res = await fetch(`${base}/auth/v1/user`, {
+    headers: { apikey: anonKey, Authorization: `Bearer ${token}` },
+  });
+  if (!res.ok) return null;
+
+  const user = (await res.json()) as { email?: string };
+  if (!user?.email) return null;
+  return user.email.trim().toLowerCase();
 }
