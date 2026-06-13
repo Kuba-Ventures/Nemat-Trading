@@ -89,9 +89,9 @@ export const product = {
   },
 
   // ── Possible Pulls ─────────────────────────────────────────────────────────
-  // The 5 most valuable distinct cards in the set, selected automatically by the
-  // backend (top USD printings, basic lands excluded, de-duped by name) with
-  // locked per-card odds. Images via Scryfall (https://scryfall.com).
+  // Auto-selected by the backend: the most valuable chase cards first, then a
+  // sampling of the set's nicest uncommons + commons (the everyday pulls), each
+  // with locked per-card odds. Images via Scryfall (https://scryfall.com).
   possiblePulls: [
     {
       id: 1,
@@ -131,6 +131,46 @@ export const product = {
       subtitle: "Mythic Rare · Full Art",
       probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/b/a/ba38abbd-97b2-47e0-8cb6-7f4a02843e42.jpg?1771345060",
+      featured: false,
+    },
+    {
+      id: 6,
+      title: "Michelangelo, Mutant BFF",
+      subtitle: "Uncommon · Borderless",
+      probability: "~6.2%",
+      scryfallImage: "https://cards.scryfall.io/normal/front/f/f/ff378d21-eb8c-4e6d-9e63-5f1b6030a001.jpg?1771502840",
+      featured: false,
+    },
+    {
+      id: 7,
+      title: "Skateboard",
+      subtitle: "Uncommon · Special",
+      probability: "~6.2%",
+      scryfallImage: "https://cards.scryfall.io/normal/front/d/e/deadb6d8-3eea-4261-a07c-8536df89e85c.jpg?1771502813",
+      featured: false,
+    },
+    {
+      id: 8,
+      title: "Leonardo, Leader in Blue",
+      subtitle: "Uncommon · Borderless",
+      probability: "~6.2%",
+      scryfallImage: "https://cards.scryfall.io/normal/front/b/7/b7f4581f-e0c1-4cc3-b94c-dd104606c4af.jpg?1771502822",
+      featured: false,
+    },
+    {
+      id: 9,
+      title: "Sewer-veillance Cam",
+      subtitle: "Common · Special",
+      probability: "~7.4%",
+      scryfallImage: "https://cards.scryfall.io/normal/front/a/b/ab47a37b-b66d-4f70-9bf0-4d5ed6b518f3.jpg?1779102308",
+      featured: false,
+    },
+    {
+      id: 10,
+      title: "Negate",
+      subtitle: "Common · Special",
+      probability: "~7.4%",
+      scryfallImage: "https://cards.scryfall.io/normal/front/5/2/52d58fe4-6070-4022-9cd7-c35a11b44525.jpg?1771342360",
       featured: false,
     },
   ],

@@ -707,44 +707,59 @@ export async function fetchTopCardsByValue(setCode: string): Promise<any[]> {
  * Cards are assumed pre-sorted by value descending (see fetchTopCardsByValue), so
  * de-duping by name keeps the priciest printing of each card.
  */
+// How the possible-pulls showcase is composed: the top chase cards by value,
+// then a sampling of the set's nicest uncommons + commons so the lineup shows
+// the everyday pulls too (not just the headliners).
+const TOP_VALUE_COUNT = 5;
+const UNCOMMON_COUNT = 3;
+const COMMON_COUNT = 2;
+
+/**
+ * Build the possible-pulls showcase: the {@link TOP_VALUE_COUNT} most valuable
+ * distinct cards, followed by the priciest uncommons and commons. `cards` must be
+ * pre-sorted by value descending (see {@link fetchTopCardsByValue}).
+ */
 export function buildPossiblePulls(
   cards: any[],
   perCardByRarity: Record<string, { pct: number; display: string }>,
-  limit = 5,
   specials: Special[] = []
 ): PossiblePull[] {
   // Rarest stated special-treatment rate (e.g. the "<1% of boosters" borderless
-  // headliner) — used to label special printings honestly instead of giving them
-  // the standard per-rarity odds, which would overstate these chase cards.
+  // headliner) — used to label rare/mythic special printings honestly instead of
+  // giving them the standard per-rarity odds, which would overstate these chases.
   const rarestSpecial = [...specials].sort((a, b) => a.percent - b.percent)[0];
-
   const seen = new Set<string>();
-  const picks: PossiblePull[] = [];
-  for (const c of cards) {
-    if (picks.length >= limit) break;
-    const img = cardImage(c);
-    if (!c.name || !img || seen.has(c.name)) continue;
-    seen.add(c.name);
 
-    const treatment = treatmentOf(c);
-    const rarityLabel = RARITY_LABEL[c.rarity] ?? "Rare";
-    const subtitle = treatment ? `${rarityLabel} · ${treatment}` : rarityLabel;
-    // Special printings use the special-tier odds when the set states one;
-    // otherwise fall back to the card's standard per-rarity odds.
-    const odds = (treatment && rarestSpecial)
-      ? rarestSpecial.display
-      : (c.rarity ? perCardByRarity[c.rarity]?.display : undefined);
+  // Pick up to `limit` distinct, image-having cards (optionally filtered to a set
+  // of rarities), most valuable first. Mutates `seen` so groups don't overlap.
+  const take = (limit: number, rarities?: Set<string>) => {
+    const out: Omit<PossiblePull, "id" | "featured">[] = [];
+    for (const c of cards) {
+      if (out.length >= limit) break;
+      const img = cardImage(c);
+      if (!c.name || !img || seen.has(c.name)) continue;
+      if (rarities && !rarities.has(c.rarity)) continue;
+      seen.add(c.name);
 
-    picks.push({
-      id: picks.length + 1,
-      title: c.name,
-      subtitle,
-      probability: odds ?? "",
-      scryfallImage: img,
-      featured: picks.length === 0,
-    });
-  }
-  return picks;
+      const treatment = treatmentOf(c);
+      const rarityLabel = RARITY_LABEL[c.rarity] ?? "Rare";
+      const subtitle = treatment ? `${rarityLabel} · ${treatment}` : rarityLabel;
+      // Only rare/mythic special printings inherit the special rate; a showcase
+      // common is still a common, so it keeps standard per-rarity odds.
+      const isChase = !!treatment && !!rarestSpecial && (c.rarity === "mythic" || c.rarity === "rare");
+      const odds = isChase ? rarestSpecial.display : perCardByRarity[c.rarity]?.display;
+
+      out.push({ title: c.name, subtitle, probability: odds ?? "", scryfallImage: img });
+    }
+    return out;
+  };
+
+  const composed = [
+    ...take(TOP_VALUE_COUNT),
+    ...take(UNCOMMON_COUNT, new Set(["uncommon"])),
+    ...take(COMMON_COUNT, new Set(["common"])),
+  ];
+  return composed.map((c, i) => ({ ...c, id: i + 1, featured: i === 0 }));
 }
 
 function buildSpecs(set: any, slug: string): { label: string; value: string }[] {
@@ -860,8 +875,8 @@ router.post("/lookup/tcgplayer", async (req, res) => {
         // Locked tier table + per-card odds, derived from contents + Scryfall counts
         const { tiers, perCardByRarity, specials } = computePullData(finalContents, slug, rarityCounts);
 
-        // The 5 most valuable distinct cards, ready for the storefront
-        const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, 5, specials);
+        // Top chase cards + a sampling of uncommons/commons, ready for the storefront
+        const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
 
         // A wider, deduped preview for the admin lookup panel (odds attached)
         const seenPreview = new Set<string>();

@@ -128,9 +128,9 @@ router.post("/admin/products/relock-pulls", requireAdmin, async (_req, res) => {
       ]);
       const { tiers, perCardByRarity, specials } = computePullData(contents, resolved.slug, counts);
 
-      // Auto-managed: refresh Possible Pulls to the 5 most valuable cards in the
-      // set, with locked per-card odds. Replaces whatever was stored.
-      const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, 5, specials);
+      // Auto-managed: refresh Possible Pulls to the top chase cards + a sampling
+      // of uncommons/commons, with locked per-card odds. Replaces what was stored.
+      const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
 
       await db
         .update(productsTable)

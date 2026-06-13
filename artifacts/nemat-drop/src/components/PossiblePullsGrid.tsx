@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, Fragment } from "react";
 import { product } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
 
@@ -51,8 +51,19 @@ export default function PossiblePullsGrid() {
       </p>
 
       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-5 gap-4">
-        {possiblePulls.map((pull, i) => (
-          <div key={(pull as any).id ?? i} className="flex flex-col gap-2">
+        {(() => {
+          // First common/uncommon card marks the break between chase cards and
+          // the everyday pulls — render a thin divider before it.
+          const breakAt = possiblePulls.findIndex((p) => /\b(un)?common\b/i.test((p as any).subtitle ?? ""));
+          return possiblePulls.map((pull, i) => (
+          <Fragment key={(pull as any).id ?? i}>
+            {i === breakAt && breakAt > 0 && (
+              <div className="col-span-full flex items-center gap-3 mt-2">
+                <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 whitespace-nowrap">Also in every pack</span>
+                <span className="flex-1 h-px bg-white/10" />
+              </div>
+            )}
+          <div className="flex flex-col gap-2">
             <ScryfallCard scryfallImage={(pull as any).scryfallImage} title={pull.title} featured={pull.featured} />
             <div>
               <p className={`text-sm font-medium leading-tight ${pull.featured ? "text-amber-400" : "text-amber-300/80"}`}>
@@ -64,7 +75,9 @@ export default function PossiblePullsGrid() {
               <p className="text-xs text-gray-500 mt-0.5">{pull.probability}</p>
             </div>
           </div>
-        ))}
+          </Fragment>
+          ));
+        })()}
       </div>
     </section>
   );
