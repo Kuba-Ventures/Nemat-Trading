@@ -1,6 +1,16 @@
 @import "tailwindcss";
 @import "tw-animate-css";
 
+/* Brand wordmark font (licensed, self-hosted). Lazy-loaded: only fetched when
+   an element actually uses font-family "Gotham Black". */
+@font-face {
+  font-family: "Gotham Black";
+  src: url("/fonts/Gotham-Black.otf") format("opentype");
+  font-weight: 900;
+  font-style: normal;
+  font-display: swap;
+}
+
 @keyframes turntable {
   from { transform: rotateX(-18deg) rotateY(0deg); }
   to   { transform: rotateX(-18deg) rotateY(360deg); }
