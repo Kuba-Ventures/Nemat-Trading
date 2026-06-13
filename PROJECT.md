@@ -1,13 +1,13 @@
 # Nemat / Tommy Top Decker Trading
 *Magic: The Gathering booster-pack drop storefront with live shipping, Stripe checkout, and an admin panel.*
 
-*Last updated: 2026-06-12 20:51 ET by kuba-vault*
+*Last updated: 2026-06-12 23:59 ET by kuba-vault*
 
 ---
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading is a single-product-at-a-time MTG booster-pack drop site: browse a product, get a live USPS quote, check out with Stripe, and the order lands in Postgres and a Google Sheet. It's live, in post-MVP iteration. The pull-probabilities feature is now complete across both phases: phase 1 derived accurate per-pack hit rates and locked per-card odds from each product's pack contents plus live Scryfall counts; phase 2 (committed to master as `972eb22`) auto-selects the 5 most valuable distinct cards per set as "Possible Pulls," each with image, rarity, and locked odds. Possible Pulls is auto-managed — always the live top-5 by value — not manually curated. Frontend and backend still must deploy together, and someone must click "Re-lock pull odds" once after deploy to refresh stored odds and the top-5 selection.
+Tommy Top Decker Trading is a single-product-at-a-time MTG booster-pack drop site: browse a product, get a live USPS quote, check out with Stripe, and the order lands in Postgres and a Google Sheet. It's live, in post-MVP iteration. The pull-probabilities feature now shows a full pack picture: the 5 most valuable chase cards (any rarity) followed by a sampling of the set's nicest uncommons (3) and commons (2), each with accurate per-card odds, all auto-derived from pack contents + live Scryfall data (latest on master as `a065659`). Possible Pulls is auto-managed, not curated. The code is live (Railway auto-deploys the backend on master pushes, Vercel the frontend), but the production DB's TMNT product still holds stale seed odds and an empty `possiblePulls`, so the live storefront is rendering mock fallback for that product. The one thing left: Finley clicks "Re-lock pull odds" in the live admin to write the accurate tiers + 10-card lineup into the DB.
 
 ---
 
@@ -26,14 +26,14 @@ Tommy Top Decker Trading is a single-product-at-a-time MTG booster-pack drop sit
 - **Engagement manager:** self-directed
 - **Lead:** Finley
 - **Cadence:** self-directed
-- **Next milestone:** deploy FE+BE together and run "Re-lock pull odds" once to push both phases live
+- **Next milestone:** click "Re-lock pull odds" on the live admin to refresh the production DB (TMNT still has stale seed odds + empty possiblePulls)
 - **Flags:** shipping
 
 ---
 
 ## Where we are right now  [rewrite]
 
-Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls" now auto-selects the 5 most valuable distinct cards in each product's set, carrying the locked per-card odds from phase 1. The backend selector lives in `artifacts/api-server/src/routes/scryfall.ts`: `fetchTopCardsByValue` ranks set cards by Scryfall USD desc (basic lands excluded, `unique=prints`), and `buildPossiblePulls` de-dupes by name keeping the priciest printing, takes the top 5, and attaches image + rarity + locked odds. Special printings (borderless / showcase / full-art) are detected via `treatmentOf` and labeled with the set's stated special rate (e.g. `<1%`) instead of overstating them with standard rarity odds. The `relock-pulls` backfill (`products.ts`) now regenerates `possiblePulls` from this selector, so clicking "Re-lock pull odds" refreshes both the odds and the top-5 selection — this is auto-managed by design, not seed-then-preserve. Admin lookup (`admin.tsx`) uses the backend `possiblePulls` directly (the old hardcoded 8-card mapping is gone), and the `product.ts` mock now reflects the real TMNT top-5. Verified against live TMNT data (`tmt`): Leonardo Sewer Samurai, Donatello Mutant Mechanic, Raphael Ninja Destroyer, Michelangelo Improviser (all Borderless) and Super Shredder (Full Art), all labeled `<1%` — the marquee chase cards. Next concrete step is unchanged: deploy frontend and backend together (old donut FE + new per-pack data breaks the storefront), then click "Re-lock pull odds" once to upgrade every existing product including TMNT. With phase 2 done, both phases of the pull-probabilities feature are complete; the only remaining work is the deploy itself.
+Just shipped to master (`a065659`, backend auto-deploying via Railway, frontend via Vercel): Possible Pulls now shows common/uncommon cards below the top-5 chase cards, so the storefront reflects the whole pack instead of just the marquee. `buildPossiblePulls` in `artifacts/api-server/src/routes/scryfall.ts` composes the showcase as TOP_VALUE_COUNT=5 chase cards (most valuable, any rarity) + UNCOMMON_COUNT=3 + COMMON_COUNT=2, each value-ranked within its rarity and deduped by name. Key refinement this session: the stated special-treatment rate (e.g. `<1%`) is now applied ONLY to rare/mythic chase printings — a borderless *uncommon* keeps its standard ~6.2% odds instead of being mislabeled ultra-rare. The `buildPossiblePulls` signature changed (dropped the explicit limit arg); the lookup route and the relock backfill in `products.ts` were updated to match. `PossiblePullsGrid.tsx` renders a small "Also in every pack" divider (label + thin rule, col-span-full) before the first common/uncommon card. Verified against live TMNT (`tmt`): chase = Leonardo Sewer Samurai / Donatello Mutant Mechanic / Raphael Ninja Destroyer / Michelangelo Improviser (Borderless) + Super Shredder (Full Art), all `<1%`; then uncommons (~6.2%) Michelangelo Mutant BFF, Skateboard, Leonardo Leader in Blue; then commons (~7.4%) Sewer-veillance Cam, Negate. Discovered this session: the production DB's TMNT product still has the OLD seed `pullProbabilities` (27/23/22/14/9/5, no display field) and an EMPTY `possiblePulls`, so the live storefront is currently rendering the mock fallback and stale tier numbers. The only remaining step is for Finley to click "Re-lock pull odds" in the live admin once deploys land — that writes the accurate tiers + 10-card lineup into the DB. (Confirmed the Railway backend auto-deploys from master: the relock-pulls endpoint returns 401 live, i.e. the new code is present — correcting the earlier "Railway deploys are manual" note.)
 
 ---
 
@@ -44,14 +44,14 @@ Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls
 - Customer accounts: email+password login with magic-link fallback, order history (`src/pages/account.tsx`).
 - Admin panel (`src/pages/admin.tsx`): unified top nav (Storefront link + Products / Orders / Waitlist tabs), hidden admin entry; product management, order + waitlist dashboards, Stripe order backfill/sync, and a new "Re-lock pull odds" button.
 - Pull-probability chart now renders per-pack hit-rate bars; the donut was removed because hit rates don't sum to 100 (`src/components/PullProbabilityChart.tsx`).
-- "Possible Pulls" shows the auto-selected top-5 most valuable distinct cards per set (image + rarity + locked odds), sourced straight from the backend `possiblePulls`; the old hardcoded 8-card mapping was removed (`src/pages/admin.tsx`).
-- Mock fallback data updated to the real TMNT top-5 (`src/data/product.ts`).
+- "Possible Pulls" shows the top-5 chase cards followed by a sampling of uncommons (3) and commons (2), each with image + rarity + accurate per-card odds, sourced straight from the backend `possiblePulls`; the old hardcoded 8-card mapping was removed (`src/pages/admin.tsx`). A small "Also in every pack" divider separates the chase row from the everyday pulls (`src/components/PossiblePullsGrid.tsx`).
+- Mock fallback data updated to the real TMNT 10-card lineup (`src/data/product.ts`).
 
 **Backend / data** (`artifacts/api-server`, Express 5 + TS → Railway)
 - Routes: `account`, `checkout`, `orders`, `products`, `scryfall`, `shipping`, `subscribers`, `upload`, `webhooks`, `health`.
 - Probability model in `src/routes/scryfall.ts`: `computePullData` (now also returns parsed `specials`), `fetchRarityCounts`, `perCardOdds`, set-resolution helpers (`parseTcgSlug`, `matchScryfallSet`, `resolveSetFromTcgUrl`), and the `scryfallFetch()` wrapper.
-- Possible-pulls selector in `src/routes/scryfall.ts`: `fetchTopCardsByValue` (set cards ranked by Scryfall USD desc, basic lands excluded, `unique=prints`) and `buildPossiblePulls` (de-dupes by name keeping the priciest printing, takes top 5, attaches image + rarity + locked odds; detects borderless/showcase/full-art via `treatmentOf` and labels them with the set's stated special rate).
-- Admin endpoint `POST /api/admin/products/relock-pulls` in `src/routes/products.ts` — idempotent backfill that recomputes per-card odds AND regenerates the top-5 `possiblePulls` selection for every existing product (auto-managed).
+- Possible-pulls selector in `src/routes/scryfall.ts`: `fetchTopCardsByValue` (set cards ranked by Scryfall USD desc, basic lands excluded, `unique=prints`) and `buildPossiblePulls`, which composes the showcase from `TOP_VALUE_COUNT=5` chase cards (any rarity) + `UNCOMMON_COUNT=3` + `COMMON_COUNT=2`, each value-ranked within rarity and deduped by name. Attaches image + rarity + locked odds; detects borderless/showcase/full-art via `treatmentOf` and applies the set's stated special rate ONLY to rare/mythic chase printings (so a borderless uncommon keeps its standard odds). Lineup composition is tunable via the three count constants.
+- Admin endpoint `POST /api/admin/products/relock-pulls` in `src/routes/products.ts` — idempotent backfill that recomputes per-card odds AND regenerates the `possiblePulls` lineup for every existing product (auto-managed); updated to the new `buildPossiblePulls` signature.
 - Stripe checkout + webhooks, Shippo USPS rates, Google Apps Script sheet sync (Apps Script under `artifacts/api-server/apps-script/`).
 - DB columns added as idempotent ALTER TABLE in the API-server bootstrap (no migration system — see Risks).
 
@@ -96,6 +96,8 @@ Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls
 
 ## Decisions log  [append-only — never rewrite or delete]
 
+- **2026-06-12 — Possible Pulls shows chase + everyday cards, not just the top-5** — The lineup is now 5 most-valuable chase cards (any rarity) + 3 uncommons + 2 commons, value-ranked within rarity, so buyers see the whole pack rather than just the marquee. Composition is tunable via `TOP_VALUE_COUNT` / `UNCOMMON_COUNT` / `COMMON_COUNT` in `scryfall.ts`.
+- **2026-06-12 — Special-treatment rate applies only to rare/mythic chase printings** — The set's stated special rate (e.g. `<1%`) is no longer applied to special-treatment uncommons/commons; a borderless uncommon keeps its standard ~6.2% odds instead of being mislabeled ultra-rare. Refines the earlier "label all special printings with the special rate" decision.
 - **2026-06-12 — Possible Pulls is auto-managed, not curated** — "Possible Pulls" always shows the live top-5 most valuable distinct cards by Scryfall USD; "Re-lock pull odds" replaces whatever's stored. Finley chose "auto-managed" over a "seed-then-preserve" model where manual edits would survive a re-lock.
 - **2026-06-12 — Special printings labeled with the set's stated special rate** — Borderless/showcase/full-art cards (detected via `treatmentOf`) are labeled with the set's stated special rate (e.g. `<1%`) rather than standard rarity odds, which would overstate them. Approximation accepted: one rate covers all special-treatment cards (see Risks).
 - **2026-06-12 — Pull-probability source of truth = auto-derive** — Tier and per-card odds are computed from each product's official pack-contents text + live Scryfall per-rarity counts, not manual entry. Rejected hand-typed numbers because they were inaccurate/fabricated.
@@ -106,21 +108,21 @@ Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls
 
 ## Open loops  [rewrite — but carry forward unfinished items]
 
-- [ ] Deploy frontend + backend together — Finley (old donut FE + new hit-rate data breaks the storefront visual)
-- [ ] After deploy, click "Re-lock pull odds" once to refresh both odds and the top-5 selection on all existing products (TMNT included) — Finley
-- [x] Phase 2: possible-pulls card selection — done in `972eb22` (auto-managed top-5 by USD, with images, rarity, and locked odds)
+- [ ] Click "Re-lock pull odds" on the live admin once deploys finish — Finley. The production DB's TMNT product still has the old seed `pullProbabilities` (27/23/22/14/9/5) and empty `possiblePulls`, so the live storefront renders mock fallback + stale tiers. This is the only thing left to make the live site fully accurate.
+- [x] Deploy frontend + backend — code is on master (`a065659`); Railway + Vercel auto-deploy from master pushes.
+- [x] Possible-pulls chase + everyday lineup — done in `a065659` (top-5 chase + 3 uncommons + 2 commons, accurate per-card odds).
+- [x] Possible-pulls card selection — done in `972eb22` (auto-managed top-5 by USD, with images, rarity, and locked odds).
 
 ---
 
 ## Risks & known issues  [rewrite]
 
 - **No migration system.** Schema changes must be idempotent `ALTER TABLE` in the API-server bootstrap or prod drifts and 500s (previously caused orders to silently not persist).
-- **FE/BE deploy coupling (this release).** Shipping per-pack hit-rate data while an old donut frontend is live renders numbers summing >300% and breaks the storefront. Both pull-probability phases must go out together, followed by one "Re-lock pull odds" run.
-- **Special-printing odds are approximate.** The `<1%` rate applied to special-treatment cards uses the set's single stated special rate for ANY special-treatment card, so a full-art Super Shredder shows the same `<1%` as a borderless headliner — closer than before but not a per-treatment exact rate. Sets with no stated special % fall back to standard rarity odds for special cards.
+- **Live prod DB has stale TMNT pull data.** The production DB's TMNT product still holds the old seed `pullProbabilities` (27/23/22/14/9/5, no display field) and an EMPTY `possiblePulls`, so the live storefront renders the mock fallback for Possible Pulls and stale tier numbers in the chart. Fix: one "Re-lock pull odds" admin run now that the new code is deployed. Until then, the live site does not match what's verified locally.
+- **Special-printing odds are approximate.** The set's stated special rate is now applied only to rare/mythic chase printings (a borderless uncommon keeps its standard odds), but it's still one rate across all rare/mythic special treatments — a full-art Super Shredder shows the same `<1%` as a borderless headliner, not a per-treatment exact rate. Sets with no stated special % fall back to standard rarity odds for special cards.
 - **CORS / FRONTEND_URL gotcha.** Multi-origin CORS is comma-separated `FRONTEND_URL`; misconfiguration was behind a prior incident. www-canonical domain.
 - **Mac dev friction.** Repo is configured Linux-only (`pnpm-workspace.yaml` overrides strip all non-linux native binaries). To run the frontend on a Mac, temporarily un-exclude darwin-arm64 builds of rollup/lightningcss/@tailwindcss/oxide/esbuild, `pnpm install`, then revert (node_modules keeps the binaries). The API server won't boot locally without a real `DATABASE_URL` — the local `.env` placeholder fails the boot-time DB migration.
 - **`.env.example` secret hygiene.** Real production secrets have been pasted into `.env.example` before; check it whenever env vars change.
-- **Railway deploys are manual.**
 
 ---
 
@@ -128,7 +130,7 @@ Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls
 
 - **Live URL:** https://tommytopdecker.com (Vercel, www-canonical)
 - **Staging:** (none yet)
-- **API host:** Railway (manual deploys)
+- **API host:** Railway (auto-deploys from master pushes)
 - **Client Drive folder:** (unknown)
 - **Slack channel:** (none known)
 - **GitHub org:** Kuba-Ventures
@@ -138,5 +140,6 @@ Phase 2 of pull-probabilities just landed on master (`972eb22`). "Possible Pulls
 
 ## Changelog  [append-only — never rewrite or delete]
 
+- **2026-06-12:** Possible Pulls chase + everyday lineup (`a065659`) — `buildPossiblePulls` now composes top-5 chase cards (any rarity) + 3 uncommons + 2 commons, value-ranked within rarity, with accurate per-card odds; the special rate now applies only to rare/mythic chase printings (borderless uncommons keep ~6.2%). New "Also in every pack" divider in `PossiblePullsGrid`; TMNT mock is now a 10-card lineup. Confirmed Railway auto-deploys from master (relock endpoint 401 live = new code present) — corrects the "Railway deploys are manual" note. Noted: prod DB's TMNT product still has stale seed odds + empty possiblePulls; one "Re-lock pull odds" run will fix the live site.
 - **2026-06-12:** Pull-probabilities phase 2 (`972eb22`) — "Possible Pulls" now auto-selects the top-5 most valuable distinct cards per set (`fetchTopCardsByValue` + `buildPossiblePulls`), with images, rarity, and locked odds; special printings detected via `treatmentOf` and labeled with the set's stated special rate. Re-lock now also regenerates the top-5 (auto-managed). Admin uses backend `possiblePulls` directly; TMNT mock updated to the real top-5. Phase 2 complete; both phases now done pending deploy.
 - **2026-06-12:** Initial PROJECT.md superdoc. Recorded pull-probabilities phase 1 (per-pack hit rates derived from pack contents + Scryfall, 2:1 rare/mythic split, locked per-card odds, re-lock backfill endpoint + admin button), the Scryfall User-Agent fix, the FE/BE co-deploy requirement, and Mac/Linux dev-env notes.
