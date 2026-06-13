@@ -69,19 +69,23 @@ export const product = {
   copyright: "© 2025 Wizards of the Coast LLC. © 2025 Viacom International. TEENAGE MUTANT NINJA TURTLES is a trademark of Viacom International Inc. All rights reserved.",
 
   // ── Pull Probabilities ─────────────────────────────────────────────────────
+  // Per-pack hit rate (chance a pack contains ≥1 of this tier) + per-card odds.
+  // Derived from the official pack contents + Scryfall set counts (set: tmt —
+  // 72 common / 55 uncommon / 53 rare / 21 mythic), 2:1 rare:mythic weighting.
+  // These do NOT sum to 100 — standard rarities are guaranteed slots.
   pullProbabilities: [
-    { label: "Common", abbr: "C", percent: 27, color: "#6b7280" },
-    { label: "Uncommon", abbr: "U", percent: 23, color: "#60a5fa" },
-    { label: "Rare", abbr: "R", percent: 22, color: "#fbbf24" },
-    { label: "Mythic Rare", abbr: "M", percent: 14, color: "#f97316" },
-    { label: "Borderless", abbr: "B", percent: 9, color: "#a78bfa" },
-    { label: "Eastman Art", abbr: "E", percent: 5, color: "#34d399" },
+    { label: "Common", abbr: "C", percent: 100, display: "Guaranteed", perCardPct: 7.4, color: "#6b7280" },
+    { label: "Uncommon", abbr: "U", percent: 100, display: "Guaranteed", perCardPct: 6.2, color: "#60a5fa" },
+    { label: "Rare", abbr: "R", percent: 100, display: "Guaranteed", perCardPct: 7.6, color: "#fbbf24" },
+    { label: "Mythic Rare", abbr: "M", percent: 59, display: "~59% / pack", perCardPct: 3.9, color: "#f97316" },
+    { label: "Land", abbr: "L", percent: 100, display: "Guaranteed", perCardPct: null, color: "#4ade80" },
+    { label: "Borderless Eastman headliner", abbr: "B", percent: 1, display: "<1%", perCardPct: null, color: "#a78bfa" },
   ],
 
   donutCenter: {
-    label: "Common",
-    percent: "27.0%",
-    sub: "Standard cards",
+    label: "Mythic Rare",
+    percent: "~59%",
+    sub: "per pack",
   },
 
   // ── Possible Pulls ─────────────────────────────────────────────────────────
@@ -91,7 +95,7 @@ export const product = {
       id: 1,
       title: "Leonardo, Leader in Blue",
       subtitle: "Mythic Rare · Eastman Art",
-      probability: "~2%",
+      probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/d/6/d6eaae35-d513-43d8-be2d-b97c15e25937.jpg?1771502519",
       featured: false,
     },
@@ -99,7 +103,7 @@ export const product = {
       id: 2,
       title: "Donatello, Turtle Techie",
       subtitle: "Mythic Rare · Eastman Art",
-      probability: "~2%",
+      probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/6/8/683cfef0-f164-4db8-b83f-79eb804e50ae.jpg?1771502569",
       featured: false,
     },
@@ -107,7 +111,7 @@ export const product = {
       id: 3,
       title: "Raphael, Most Attitude",
       subtitle: "Mythic Rare · Eastman Art",
-      probability: "~2%",
+      probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/8/8/88385a87-f931-409f-8a21-250f0866d63d.jpg?1771502673",
       featured: false,
     },
@@ -115,7 +119,7 @@ export const product = {
       id: 4,
       title: "Michelangelo, Game Master",
       subtitle: "Mythic Rare · Eastman Art",
-      probability: "~2%",
+      probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/2/e/2e914c3d-2eed-48bf-af9a-a8998fd5111d.jpg?1771502708",
       featured: true,
     },
@@ -123,7 +127,7 @@ export const product = {
       id: 5,
       title: "Shredder, Shadow Master",
       subtitle: "Borderless Source Material",
-      probability: "~9%",
+      probability: "<1%",
       scryfallImage: "https://cards.scryfall.io/normal/front/d/d/ddf4d3c9-bef9-4796-91ef-3d5beebae571.jpg?1773509742",
       featured: false,
     },

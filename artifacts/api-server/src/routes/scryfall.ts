@@ -14,6 +14,14 @@ function requireAdmin(req: any, res: any, next: any) {
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 
+// Scryfall now requires a User-Agent + Accept header on every API request and
+// returns HTTP 400 without them. Route all Scryfall calls through this helper.
+function scryfallFetch(url: string): Promise<Response> {
+  return fetch(url, {
+    headers: { "User-Agent": "NematTrading/1.0", Accept: "application/json" },
+  });
+}
+
 function titleCase(s: string) {
   return s.replace(/\b\w/g, (c) => c.toUpperCase());
 }
@@ -133,7 +141,7 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
 router.get("/scryfall/:id/price", async (req, res) => {
   const { id } = req.params;
   try {
-    const response = await fetch(`https://api.scryfall.com/cards/${id}`);
+    const response = await scryfallFetch(`https://api.scryfall.com/cards/${id}`);
     if (!response.ok) { res.json({ usd: null }); return; }
     const data = await response.json() as { prices?: { usd?: string | null } };
     res.json({ usd: data.prices?.usd ?? null });
@@ -376,61 +384,271 @@ async function scrapeProductPage(url: string, productId: string | null): Promise
   return { intelReport, contents };
 }
 
-function parsePullProbabilities(
-  contents: string[],
-  slug: string
-): { label: string; abbr: string; percent: number; color: string }[] {
+// ─── Pull probability model ───────────────────────────────────────────────────
+//
+// Two numbers are produced per product and "locked" onto it at lookup time:
+//   • tier hit rate  — chance a single pack contains ≥1 card of that tier
+//   • per-card odds  — chance a single pack contains a specific named card
+//
+// Inputs are all real, nothing hand-typed:
+//   • slot counts come from the official pack contents (e.g. "5 rare or higher")
+//   • per-rarity card counts come from Scryfall (how many mythics exist in the set)
+//
+// The only thing neither source gives is how the "rare or higher" slots split
+// between rare and mythic, so we use WotC's documented sheet convention: a given
+// rare is printed ~2× as often as a given mythic.
+const RARE_WEIGHT = 2;
+const MYTHIC_WEIGHT = 1;
+
+export type RarityCounts = { common: number; uncommon: number; rare: number; mythic: number };
+type SlotCounts = { total: number; common: number; uncommon: number; land: number; rarePlus: number };
+type Special = { label: string; abbr: string; display: string; percent: number; color: string };
+export type Tier = {
+  label: string;
+  abbr: string;
+  percent: number;        // tier hit rate, 0–100 (drives bar/segment sizing)
+  display: string;        // human string: "Guaranteed", "~60% / pack", "<1%"
+  perCardPct: number | null; // odds for a specific card of this tier, or null (e.g. lands)
+  color: string;
+};
+
+const probAtLeastOne = (pPerSlot: number, slots: number) =>
+  slots <= 0 ? 0 : 1 - Math.pow(1 - pPerSlot, slots);
+
+const pctDisplay = (pct: number) =>
+  pct < 1 ? "<1%" : pct < 10 ? `~${pct.toFixed(1)}%` : `~${Math.round(pct)}%`;
+
+/** Pull a count (or midpoint of a range like "5–6") immediately preceding a keyword. */
+function parseCount(text: string, keyword: string): number | null {
+  const m = text.match(new RegExp(`(\\d+)(?:\\s*[\\u2013\\u2014-]\\s*(\\d+))?\\s+${keyword}`));
+  if (!m) return null;
+  return m[2] ? (parseInt(m[1]) + parseInt(m[2])) / 2 : parseInt(m[1]);
+}
+
+/** Slot composition of one pack, from the official contents text. */
+function parseSlotCounts(contents: string[], slug: string): SlotCounts {
   const text = contents.join(" ").toLowerCase();
 
-  let total = 15;
-  let common = 0, uncommon = 0, land = 0, rareOrHigher = 0;
+  let total = parseCount(text, "magic") ?? 15;
+  let rarePlus =
+    parseCount(text, "cards? of rarity rare or higher") ??
+    parseCount(text, "rare or higher") ??
+    0;
+  let uncommon = parseCount(text, "uncommon") ?? 0;
+  let common = parseCount(text, "common") ?? 0;
+  let land = parseCount(text, "land") ?? 0;
 
-  const totalMatch = text.match(/(\d+) magic(?:: the gathering)? cards?/);
-  if (totalMatch) total = parseInt(totalMatch[1]);
-
-  const rareMatch = text.match(/(\d+) cards? of rarity rare or higher|includes? (\d+) (?:cards? of )?rare/);
-  if (rareMatch) rareOrHigher = parseInt(rareMatch[1] ?? rareMatch[2] ?? "0");
-
-  const uncommonMatch = text.match(/(\d+) uncommon/);
-  if (uncommonMatch) uncommon = parseInt(uncommonMatch[1]);
-
-  const commonMatch = text.match(/(\d+) common/);
-  if (commonMatch) common = parseInt(commonMatch[1]);
-
-  const landMatch = text.match(/(\d+) land/);
-  if (landMatch) land = parseInt(landMatch[1]);
-
-  // Fallback heuristics by product type when page scrape didn't yield data
-  if (!rareOrHigher && !uncommon && !common) {
+  // Fallback heuristics by product type when the page scrape yielded no composition
+  if (!rarePlus && !uncommon && !common) {
     const isCollector = /collector/i.test(slug);
     const isDraft = /draft/i.test(slug);
     const isSet = /set.booster/i.test(slug);
-    if (isCollector)    { total = 15; common = 4; uncommon = 5; land = 1; rareOrHigher = 5; }
-    else if (isDraft)   { total = 15; common = 10; uncommon = 3; land = 0; rareOrHigher = 2; }
-    else if (isSet)     { total = 12; common = 2; uncommon = 3; land = 1; rareOrHigher = 3; }
-    else                { total = 15; common = 5; uncommon = 4; land = 1; rareOrHigher = 5; }
+    if (isCollector)    { total = 15; common = 4; uncommon = 5; land = 1; rarePlus = 5; }
+    else if (isDraft)   { total = 15; common = 10; uncommon = 3; land = 0; rarePlus = 2; }
+    else if (isSet)     { total = 12; common = 2; uncommon = 3; land = 1; rarePlus = 3; }
+    else                { total = 15; common = 5; uncommon = 4; land = 1; rarePlus = 5; }
   }
 
-  // Split rare/mythic using standard 1-in-8 mythic ratio
-  const mythicCount = rareOrHigher > 0 ? Math.max(1, Math.round(rareOrHigher / 8)) : 0;
-  const rareCount = rareOrHigher - mythicCount;
-  const denominator = common + uncommon + land + rareCount + mythicCount || total;
+  return { total, common, uncommon, land, rarePlus };
+}
 
-  const slots: { label: string; abbr: string; count: number; color: string }[] = [
-    { label: "Common",      abbr: "C", count: common,      color: "#6b7280" },
-    { label: "Uncommon",    abbr: "U", count: uncommon,    color: "#60a5fa" },
-    { label: "Land",        abbr: "L", count: land,        color: "#4ade80" },
-    { label: "Rare",        abbr: "R", count: rareCount,   color: "#fbbf24" },
-    { label: "Mythic Rare", abbr: "M", count: mythicCount, color: "#f97316" },
-  ].filter(s => s.count > 0);
+/** Extract special-treatment tiers stated as explicit odds, e.g. "...in <1% of boosters". */
+function parseSpecials(contents: string[]): Special[] {
+  const specials: Special[] = [];
+  for (const line of contents) {
+    const m = line.match(/(<\s*)?(\d+(?:\.\d+)?)\s*%\s+of\s+boosters/i);
+    if (!m) continue;
+    const lt = !!m[1];
+    const num = parseFloat(m[2]);
+    const display = lt ? `<${m[2]}%` : pctDisplay(num);
+    const lower = line.toLowerCase();
+    const abbr = /borderless/.test(lower) ? "B" : /foil/.test(lower) ? "F" : "★";
+    // Short label: drop the "... in N% of boosters" tail
+    const label = line.replace(/\s+in\s+.*$/i, "").replace(/\s+card$/i, "").trim();
+    specials.push({ label, abbr, display, percent: lt ? Math.max(0.5, num) : num, color: "#a78bfa" });
+  }
+  return specials;
+}
 
-  const probs = slots.map(s => ({ ...s, percent: Math.round((s.count / denominator) * 100) }));
+/** Fetch how many cards of each rarity exist in a set (cheap: reads total_cards only). */
+export async function fetchRarityCounts(setCode: string): Promise<RarityCounts> {
+  const rarities = ["common", "uncommon", "rare", "mythic"] as const;
+  const counts = await Promise.all(
+    rarities.map(async (r) => {
+      try {
+        const res = await scryfallFetch(
+          `https://api.scryfall.com/cards/search?q=set:${setCode}+rarity:${r}&unique=cards`
+        );
+        if (!res.ok) return 0;
+        const d = (await res.json()) as { total_cards?: number; data?: any[] };
+        return d.total_cards ?? d.data?.length ?? 0;
+      } catch {
+        return 0;
+      }
+    })
+  );
+  return { common: counts[0], uncommon: counts[1], rare: counts[2], mythic: counts[3] };
+}
 
-  // Normalize to exactly 100%
-  const sum = probs.reduce((acc, p) => acc + p.percent, 0);
-  if (sum !== 100 && probs.length > 0) probs[probs.length - 1].percent += 100 - sum;
+/** Odds a specific named card of a given rarity appears in one pack. */
+export function perCardOdds(
+  rarity: string,
+  slots: SlotCounts,
+  counts: RarityCounts
+): number | null {
+  const totW = counts.rare * RARE_WEIGHT + counts.mythic * MYTHIC_WEIGHT;
+  switch (rarity) {
+    case "common":
+      return counts.common ? probAtLeastOne(1 / counts.common, slots.common) * 100 : null;
+    case "uncommon":
+      return counts.uncommon ? probAtLeastOne(1 / counts.uncommon, slots.uncommon) * 100 : null;
+    case "rare":
+      return totW ? probAtLeastOne(RARE_WEIGHT / totW, slots.rarePlus) * 100 : null;
+    case "mythic":
+      return totW ? probAtLeastOne(MYTHIC_WEIGHT / totW, slots.rarePlus) * 100 : null;
+    default:
+      return null;
+  }
+}
 
-  return probs.map(({ label, abbr, percent, color }) => ({ label, abbr, percent, color }));
+/**
+ * Build the locked tier table for a product from its contents + Scryfall counts.
+ * Tier hit rate = chance a pack contains ≥1 of that tier (per-pack), NOT a share
+ * of the pack — so these do not sum to 100.
+ */
+function computeTiers(
+  slots: SlotCounts,
+  counts: RarityCounts,
+  specials: Special[]
+): Tier[] {
+  const totW = counts.rare * RARE_WEIGHT + counts.mythic * MYTHIC_WEIGHT;
+  const tier = (
+    label: string,
+    abbr: string,
+    color: string,
+    hitRate: number,
+    perCardPct: number | null
+  ): Tier => ({
+    label,
+    abbr,
+    color,
+    percent: Math.round(hitRate * 100),
+    display: hitRate >= 0.995 ? "Guaranteed" : `${pctDisplay(hitRate * 100)} / pack`,
+    perCardPct,
+  });
+
+  const tiers: Tier[] = [];
+  // Standard rarities are guaranteed slots in most boosters → tier hit rate ~100%.
+  if (slots.common > 0)
+    tiers.push(tier("Common", "C", "#6b7280", probAtLeastOne(1, slots.common), perCardOdds("common", slots, counts)));
+  if (slots.uncommon > 0)
+    tiers.push(tier("Uncommon", "U", "#60a5fa", probAtLeastOne(1, slots.uncommon), perCardOdds("uncommon", slots, counts)));
+  if (slots.rarePlus > 0 && totW) {
+    tiers.push(tier("Rare", "R", "#fbbf24", probAtLeastOne((counts.rare * RARE_WEIGHT) / totW, slots.rarePlus), perCardOdds("rare", slots, counts)));
+    tiers.push(tier("Mythic Rare", "M", "#f97316", probAtLeastOne((counts.mythic * MYTHIC_WEIGHT) / totW, slots.rarePlus), perCardOdds("mythic", slots, counts)));
+  }
+  if (slots.land > 0)
+    tiers.push(tier("Land", "L", "#4ade80", probAtLeastOne(1, slots.land), null));
+
+  for (const s of specials) {
+    tiers.push({
+      label: s.label,
+      abbr: s.abbr,
+      color: s.color,
+      percent: Math.round(s.percent),
+      display: s.display,
+      perCardPct: null,
+    });
+  }
+
+  return tiers;
+}
+
+/**
+ * Compute the full pull-probability payload for a set: the tier table plus a
+ * per-card odds lookup by rarity (used to label individual possible-pull cards).
+ */
+export function computePullData(
+  contents: string[],
+  slug: string,
+  counts: RarityCounts
+): { tiers: Tier[]; perCardByRarity: Record<string, { pct: number; display: string }> } {
+  const slots = parseSlotCounts(contents, slug);
+  const specials = parseSpecials(contents);
+  const tiers = computeTiers(slots, counts, specials);
+
+  const perCardByRarity: Record<string, { pct: number; display: string }> = {};
+  for (const r of ["common", "uncommon", "rare", "mythic"]) {
+    const pct = perCardOdds(r, slots, counts);
+    if (pct != null) perCardByRarity[r] = { pct, display: pctDisplay(pct) };
+  }
+
+  return { tiers, perCardByRarity };
+}
+
+// ─── Set resolution from a TCGPlayer URL ────────────────────────────────────────
+
+/** Parse a TCGPlayer product slug into a set name + pack type for Scryfall matching. */
+export function parseTcgSlug(url: string): { slug: string; setName: string; packType: string | null } {
+  const urlObj = new URL(url);
+  const pathParts = urlObj.pathname.split("/").filter(Boolean);
+  const slug = pathParts[pathParts.length - 1] ?? "";
+
+  const packMatch = slug.match(/(collector-booster(?:-pack|-box)?|draft-booster(?:-pack|-box)?|set-booster(?:-pack|-box)?|booster-(?:pack|box)|booster-display)/i);
+  const packType = packMatch ? titleCase(packMatch[0].replace(/-/g, " ")) : null;
+
+  let setName = slug
+    .replace(/^magic-the-gathering-/, "")
+    .replace(/^magic-/, "")
+    .replace(/([-_]collector[-_]booster.*)$/i, "")
+    .replace(/([-_]draft[-_]booster.*)$/i, "")
+    .replace(/([-_]set[-_]booster.*)$/i, "")
+    .replace(/([-_]booster[-_](?:pack|box|display).*)$/i, "")
+    .replace(/-\d+$/, "")
+    .replace(/-/g, " ")
+    .trim();
+  setName = dedupeWords(setName);
+
+  return { slug, setName, packType };
+}
+
+/** Pick the best-matching Scryfall set for a parsed set name. */
+export function matchScryfallSet(setName: string, setsData: any[]): any | null {
+  const needle = setName.toLowerCase();
+  const EXCLUDED_TYPES = new Set(["token", "memorabilia", "promo"]);
+  const candidates = setsData.filter((s: any) => {
+    if (EXCLUDED_TYPES.has(s.set_type)) return false;
+    const n = s.name.toLowerCase().replace(/^universes beyond: /i, "");
+    return n.includes(needle) || needle.includes(n);
+  });
+  candidates.sort((a: any, b: any) => {
+    const aName = a.name.toLowerCase().replace(/^universes beyond: /i, "");
+    const bName = b.name.toLowerCase().replace(/^universes beyond: /i, "");
+    if (aName === needle && bName !== needle) return -1;
+    if (bName === needle && aName !== needle) return 1;
+    return aName.length - bName.length;
+  });
+  return candidates[0] ?? null;
+}
+
+/** Resolve a TCGPlayer product URL to its Scryfall set (one /sets fetch). */
+export async function resolveSetFromTcgUrl(url: string): Promise<{ set: any; slug: string } | null> {
+  const { slug, setName } = parseTcgSlug(url);
+  const setsRes = await scryfallFetch("https://api.scryfall.com/sets");
+  if (!setsRes.ok) return null;
+  const setsData = (await setsRes.json()) as { data: any[] };
+  const set = matchScryfallSet(setName, setsData.data);
+  return set ? { set, slug } : null;
+}
+
+/** Map a possible-pull card's stored subtitle (e.g. "Mythic Rare · Eastman Art") to a Scryfall rarity. */
+export function rarityFromSubtitle(subtitle: string): string | null {
+  const s = (subtitle || "").toLowerCase();
+  if (s.includes("mythic")) return "mythic";
+  if (s.includes("uncommon")) return "uncommon"; // check before "common"
+  if (s.includes("rare")) return "rare";
+  if (s.includes("common")) return "common";
+  return null;
 }
 
 function buildSpecs(set: any, slug: string): { label: string; value: string }[] {
@@ -511,27 +729,7 @@ router.post("/lookup/tcgplayer", async (req, res) => {
   if (!url) { res.status(400).json({ error: "url is required" }); return; }
 
   try {
-    const urlObj = new URL(url);
-    const pathParts = urlObj.pathname.split("/").filter(Boolean);
-    const slug = pathParts[pathParts.length - 1] ?? "";
-
-    // Detect pack/box type
-    const packMatch = slug.match(/(collector-booster(?:-pack|-box)?|draft-booster(?:-pack|-box)?|set-booster(?:-pack|-box)?|booster-(?:pack|box)|booster-display)/i);
-    const packType = packMatch ? titleCase(packMatch[0].replace(/-/g, " ")) : null;
-
-    // Strip game prefix and pack suffix to isolate the set/card name
-    let setName = slug
-      .replace(/^magic-the-gathering-/, "")
-      .replace(/^magic-/, "")
-      .replace(/([-_]collector[-_]booster.*)$/i, "")
-      .replace(/([-_]draft[-_]booster.*)$/i, "")
-      .replace(/([-_]set[-_]booster.*)$/i, "")
-      .replace(/([-_]booster[-_](?:pack|box|display).*)$/i, "")
-      .replace(/-\d+$/, "")
-      .replace(/-/g, " ")
-      .trim();
-
-    setName = dedupeWords(setName);
+    const { slug, setName, packType } = parseTcgSlug(url);
     const suggestedTitle = [titleCase(setName), packType].filter(Boolean).join(" ");
 
     // Extract product ID for mpapi calls
@@ -541,7 +739,7 @@ router.post("/lookup/tcgplayer", async (req, res) => {
     // Scrape TCGPlayer for image + price + product details, and fetch Scryfall sets — all in parallel
     const [tcgData, setsRes, pageDetails] = await Promise.all([
       scrapeTCGPlayer(url),
-      fetch("https://api.scryfall.com/sets"),
+      scryfallFetch("https://api.scryfall.com/sets"),
       scrapeProductPage(url, productId),
     ]);
 
@@ -551,56 +749,44 @@ router.post("/lookup/tcgplayer", async (req, res) => {
     // Try to find a matching Scryfall set
     if (setsRes.ok) {
       const setsData = await setsRes.json() as { data: any[] };
-      const needle = setName.toLowerCase();
-
-      // Exclude supplemental sets that aren't the main product
-      const EXCLUDED_TYPES = new Set(["token", "memorabilia", "promo"]);
-      const candidates = setsData.data.filter((s: any) => {
-        if (EXCLUDED_TYPES.has(s.set_type)) return false;
-        const n = s.name.toLowerCase().replace(/^universes beyond: /i, "");
-        return n.includes(needle) || needle.includes(n);
-      });
-
-      // Prefer sets whose name most closely matches (shortest = most specific match)
-      candidates.sort((a: any, b: any) => {
-        const aName = a.name.toLowerCase().replace(/^universes beyond: /i, "");
-        const bName = b.name.toLowerCase().replace(/^universes beyond: /i, "");
-        // Exact match wins
-        if (aName === needle && bName !== needle) return -1;
-        if (bName === needle && aName !== needle) return 1;
-        // Shorter name = less likely to be a supplemental/sub-set
-        return aName.length - bName.length;
-      });
-
-      const set = candidates[0];
+      const set = matchScryfallSet(setName, setsData.data);
 
       if (set) {
-        // Fetch top cards in this set by USD price
-        const cardsRes = await fetch(
-          `https://api.scryfall.com/cards/search?q=set:${set.code}&order=usd&dir=desc&page=1`
-        );
+        const finalContents = pageDetails.contents ?? generateContents(slug);
+        const finalIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
+
+        // Fetch top cards by price + per-rarity counts (for accurate odds) in parallel
+        const [cardsRes, rarityCounts] = await Promise.all([
+          scryfallFetch(`https://api.scryfall.com/cards/search?q=set:${set.code}&order=usd&dir=desc&page=1`),
+          fetchRarityCounts(set.code),
+        ]);
+
+        // Locked tier table + per-card odds, derived from contents + Scryfall counts
+        const { tiers, perCardByRarity } = computePullData(finalContents, slug, rarityCounts);
+
         const topCards: any[] = [];
         if (cardsRes.ok) {
           const cardsData = await cardsRes.json() as { data: any[] };
           for (const c of (cardsData.data ?? []).slice(0, 12)) {
+            const odds = c.rarity ? perCardByRarity[c.rarity] : undefined;
             topCards.push({
               id: c.id,
               name: c.name,
               imageUrl: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal ?? null,
               usd: c.prices?.usd ?? null,
               rarity: c.rarity ?? null, // "mythic" | "rare" | "uncommon" | "common"
+              probability: odds?.display ?? "",     // locked per-card odds, e.g. "~3.9%"
+              probabilityPct: odds?.pct ?? null,
             });
           }
         }
-
-        const finalContents = pageDetails.contents ?? generateContents(slug);
-        const finalIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
 
         res.json({
           type: "set",
           suggestedTitle,
           setCode: set.code,
           setName: set.name,
+          rarityCounts,
           topCards,
           scryfallId: null,
           imageUrl: tcgImageUrl ?? topCards[0]?.imageUrl ?? null,
@@ -608,19 +794,19 @@ router.post("/lookup/tcgplayer", async (req, res) => {
           specs: buildSpecs(set, slug),
           intelReport: finalIntelReport,
           contents: finalContents,
-          pullProbabilities: parsePullProbabilities(finalContents, slug),
+          pullProbabilities: tiers,
         });
         return;
       }
     }
 
     // Fall back: search Scryfall for an individual card by name
-    const searchRes = await fetch(
+    const searchRes = await scryfallFetch(
       `https://api.scryfall.com/cards/named?fuzzy=${encodeURIComponent(setName)}`
     );
 
     if (!searchRes.ok) {
-      const broadRes = await fetch(
+      const broadRes = await scryfallFetch(
         `https://api.scryfall.com/cards/search?q=${encodeURIComponent(setName)}&order=usd&dir=desc`
       );
       if (!broadRes.ok) {

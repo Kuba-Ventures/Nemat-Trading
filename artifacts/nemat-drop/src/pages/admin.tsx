@@ -3,7 +3,7 @@ import { useState, useEffect, useRef, useCallback } from "react";
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD ?? "";
 
-type PullProb = { label: string; abbr: string; percent: number; color: string };
+type PullProb = { label: string; abbr: string; percent: number; color: string; display?: string; perCardPct?: number | null };
 type PossiblePull = { id: number; title: string; subtitle: string; probability: string; scryfallImage: string; featured: boolean };
 type Spec = { label: string; value: string };
 
@@ -100,6 +100,29 @@ function ProductList({ adminKey, onEdit, onNew }: {
   const [products, setProducts] = useState<Product[]>([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState<string | null>(null);
+  const [relocking, setRelocking] = useState(false);
+  const [relockResult, setRelockResult] = useState<string | null>(null);
+
+  async function handleRelock() {
+    setRelocking(true);
+    setRelockResult(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/products/relock-pulls`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API returned ${res.status}`);
+      const parts = [`${data.updated.length} updated`];
+      if (data.skipped?.length) parts.push(`${data.skipped.length} skipped`);
+      setRelockResult(`Re-locked accurate odds — ${parts.join(", ")}.`);
+      await load();
+    } catch (err: any) {
+      setRelockResult(`Failed: ${err.message ?? "re-lock failed"}`);
+    } finally {
+      setRelocking(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -131,13 +154,27 @@ function ProductList({ adminKey, onEdit, onNew }: {
           <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500 mb-1">Nemat Trading</div>
           <h1 className="text-2xl font-bold text-white">Products</h1>
         </div>
-        <button
-          onClick={onNew}
-          className="rounded bg-cyan-400 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.2em] text-black hover:bg-cyan-300 transition-colors"
-        >
-          + New Product
-        </button>
+        <div className="flex items-center gap-3">
+          <button
+            onClick={handleRelock}
+            disabled={relocking}
+            title="Recompute accurate pull probabilities for every product from its contents + Scryfall"
+            className="rounded border border-white/15 px-4 py-2.5 text-xs font-bold uppercase tracking-[0.2em] text-gray-300 hover:border-cyan-400/40 hover:text-cyan-300 transition-colors disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {relocking ? "Re-locking…" : "Re-lock pull odds"}
+          </button>
+          <button
+            onClick={onNew}
+            className="rounded bg-cyan-400 px-5 py-2.5 text-xs font-bold uppercase tracking-[0.2em] text-black hover:bg-cyan-300 transition-colors"
+          >
+            + New Product
+          </button>
+        </div>
       </div>
+
+      {relockResult && (
+        <p className={`text-xs mb-6 ${relockResult.startsWith("Failed") ? "text-red-400" : "text-cyan-400"}`}>{relockResult}</p>
+      )}
 
       {loading && <p className="text-gray-600 text-sm text-center py-12">Loading...</p>}
       {loadError && (
@@ -214,7 +251,8 @@ type LookupResult = {
   scryfallId: string | null;
   imageUrl: string | null;
   usd: string | null;
-  topCards: { id: string; name: string; imageUrl: string | null; usd: string | null }[];
+  rarityCounts?: { common: number; uncommon: number; rare: number; mythic: number };
+  topCards: { id: string; name: string; imageUrl: string | null; usd: string | null; rarity?: string; probability?: string; probabilityPct?: number | null }[];
 };
 
 const emptyForm = {
@@ -547,7 +585,9 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
         if (data.intelReport) setIntelReport(data.intelReport);
         if (data.pullProbabilities?.length) setPullProbs(data.pullProbabilities);
       }
-      // Auto-populate possible pulls from top set cards
+      // Auto-populate possible pulls from top set cards.
+      // Each card's probability is the accurate per-card odds computed by the
+      // backend (locked at lookup time), not a hardcoded guess.
       if (data.type === "set" && data.topCards?.length) {
         const rarityLabel: Record<string, string> = {
           mythic: "Mythic Rare",
@@ -555,18 +595,12 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
           uncommon: "Uncommon",
           common: "Common",
         };
-        const rarityProb: Record<string, string> = {
-          mythic: "~2%",
-          rare: "~8%",
-          uncommon: "~30%",
-          common: "~60%",
-        };
         setPossiblePulls(
           data.topCards.slice(0, 8).map((c: any, i: number) => ({
             id: Date.now() + i,
             title: c.name,
             subtitle: rarityLabel[c.rarity] ?? "Rare",
-            probability: rarityProb[c.rarity] ?? "",
+            probability: c.probability ?? "",
             scryfallImage: c.imageUrl ?? "",
             featured: i === 0,
           }))
@@ -903,7 +937,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
               </div>
               <div className="grid gap-2">
                 {pullProbs.map((row, i) => (
-                  <div key={i} className="grid grid-cols-[1fr_60px_70px_80px_32px] gap-2 items-center">
+                  <div key={i} className="grid grid-cols-[1fr_44px_60px_92px_48px_24px] gap-2 items-center">
                     <input value={row.label} onChange={(e) => setPullProbs((p) => p.map((r, j) => j === i ? { ...r, label: e.target.value } : r))}
                       placeholder="Label (e.g. Common)"
                       className="rounded border border-white/10 bg-black px-3 py-2 text-xs focus:outline-none focus:border-cyan-400/40" />
@@ -913,9 +947,13 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
                     <div className="relative">
                       <input type="number" min="0" max="100" step="0.1" value={row.percent}
                         onChange={(e) => setPullProbs((p) => p.map((r, j) => j === i ? { ...r, percent: parseFloat(e.target.value) || 0 } : r))}
-                        className="w-full rounded border border-white/10 bg-black px-3 py-2 pr-6 text-xs focus:outline-none focus:border-cyan-400/40" />
-                      <span className="absolute right-2 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
+                        className="w-full rounded border border-white/10 bg-black px-2 py-2 pr-5 text-xs focus:outline-none focus:border-cyan-400/40" />
+                      <span className="absolute right-1.5 top-1/2 -translate-y-1/2 text-gray-600 text-xs">%</span>
                     </div>
+                    <span
+                      title="Locked per-pack hit rate (computed from pack contents + Scryfall)"
+                      className="text-[10px] text-gray-500 truncate px-1"
+                    >{row.display ?? "—"}</span>
                     <input type="color" value={row.color} onChange={(e) => setPullProbs((p) => p.map((r, j) => j === i ? { ...r, color: e.target.value } : r))}
                       className="w-full h-9 rounded border border-white/10 bg-black cursor-pointer px-1" />
                     <button type="button" onClick={() => setPullProbs((p) => p.filter((_, j) => j !== i))}
