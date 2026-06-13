@@ -89,46 +89,48 @@ export const product = {
   },
 
   // ── Possible Pulls ─────────────────────────────────────────────────────────
-  // Card images sourced from Scryfall API (https://scryfall.com) — swap scryfallId to change the card shown
+  // The 5 most valuable distinct cards in the set, selected automatically by the
+  // backend (top USD printings, basic lands excluded, de-duped by name) with
+  // locked per-card odds. Images via Scryfall (https://scryfall.com).
   possiblePulls: [
     {
       id: 1,
-      title: "Leonardo, Leader in Blue",
-      subtitle: "Mythic Rare · Eastman Art",
+      title: "Leonardo, Sewer Samurai",
+      subtitle: "Mythic Rare · Borderless",
       probability: "<1%",
-      scryfallImage: "https://cards.scryfall.io/normal/front/d/6/d6eaae35-d513-43d8-be2d-b97c15e25937.jpg?1771502519",
-      featured: false,
+      scryfallImage: "https://cards.scryfall.io/normal/front/7/4/74628e5a-7500-45d3-8147-30d2ef06da50.jpg?1768672769",
+      featured: true,
     },
     {
       id: 2,
-      title: "Donatello, Turtle Techie",
-      subtitle: "Mythic Rare · Eastman Art",
+      title: "Donatello, Mutant Mechanic",
+      subtitle: "Mythic Rare · Borderless",
       probability: "<1%",
-      scryfallImage: "https://cards.scryfall.io/normal/front/6/8/683cfef0-f164-4db8-b83f-79eb804e50ae.jpg?1771502569",
+      scryfallImage: "https://cards.scryfall.io/normal/front/b/8/b818aa60-b312-457a-b167-b66f7c0cc5f4.jpg?1771345101",
       featured: false,
     },
     {
       id: 3,
-      title: "Raphael, Most Attitude",
-      subtitle: "Mythic Rare · Eastman Art",
+      title: "Raphael, Ninja Destroyer",
+      subtitle: "Mythic Rare · Borderless",
       probability: "<1%",
-      scryfallImage: "https://cards.scryfall.io/normal/front/8/8/88385a87-f931-409f-8a21-250f0866d63d.jpg?1771502673",
+      scryfallImage: "https://cards.scryfall.io/normal/front/5/5/55f67220-3b95-49b9-9712-fedc6a67ff4b.jpg?1771345107",
       featured: false,
     },
     {
       id: 4,
-      title: "Michelangelo, Game Master",
-      subtitle: "Mythic Rare · Eastman Art",
+      title: "Michelangelo, Improviser",
+      subtitle: "Mythic Rare · Borderless",
       probability: "<1%",
-      scryfallImage: "https://cards.scryfall.io/normal/front/2/e/2e914c3d-2eed-48bf-af9a-a8998fd5111d.jpg?1771502708",
-      featured: true,
+      scryfallImage: "https://cards.scryfall.io/normal/front/d/c/dc54cba7-732c-4e09-9413-ad36603a6517.jpg?1771345114",
+      featured: false,
     },
     {
       id: 5,
-      title: "Shredder, Shadow Master",
-      subtitle: "Borderless Source Material",
+      title: "Super Shredder",
+      subtitle: "Mythic Rare · Full Art",
       probability: "<1%",
-      scryfallImage: "https://cards.scryfall.io/normal/front/d/d/ddf4d3c9-bef9-4796-91ef-3d5beebae571.jpg?1773509742",
+      scryfallImage: "https://cards.scryfall.io/normal/front/b/a/ba38abbd-97b2-47e0-8cb6-7f4a02843e42.jpg?1771345060",
       featured: false,
     },
   ],

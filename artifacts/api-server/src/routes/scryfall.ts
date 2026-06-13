@@ -572,7 +572,11 @@ export function computePullData(
   contents: string[],
   slug: string,
   counts: RarityCounts
-): { tiers: Tier[]; perCardByRarity: Record<string, { pct: number; display: string }> } {
+): {
+  tiers: Tier[];
+  perCardByRarity: Record<string, { pct: number; display: string }>;
+  specials: Special[];
+} {
   const slots = parseSlotCounts(contents, slug);
   const specials = parseSpecials(contents);
   const tiers = computeTiers(slots, counts, specials);
@@ -583,7 +587,7 @@ export function computePullData(
     if (pct != null) perCardByRarity[r] = { pct, display: pctDisplay(pct) };
   }
 
-  return { tiers, perCardByRarity };
+  return { tiers, perCardByRarity, specials };
 }
 
 // ─── Set resolution from a TCGPlayer URL ────────────────────────────────────────
@@ -649,6 +653,98 @@ export function rarityFromSubtitle(subtitle: string): string | null {
   if (s.includes("rare")) return "rare";
   if (s.includes("common")) return "common";
   return null;
+}
+
+// ─── Possible-pulls selection ───────────────────────────────────────────────────
+
+const RARITY_LABEL: Record<string, string> = {
+  mythic: "Mythic Rare",
+  rare: "Rare",
+  uncommon: "Uncommon",
+  common: "Common",
+};
+
+export type PossiblePull = {
+  id: number;
+  title: string;
+  subtitle: string;
+  probability: string;
+  scryfallImage: string;
+  featured: boolean;
+};
+
+const cardImage = (c: any): string | null =>
+  c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal ?? null;
+
+/** Name the special printing treatment of a card, if any (borderless, showcase…). */
+function treatmentOf(c: any): string | null {
+  if (c.border_color === "borderless") return "Borderless";
+  const fe: string[] = c.frame_effects ?? [];
+  if (fe.includes("showcase")) return "Showcase";
+  if (fe.includes("extendedart")) return "Extended Art";
+  if (c.full_art) return "Full Art";
+  if ((c.promo_types ?? []).length) return "Special";
+  return null;
+}
+
+/**
+ * The set's most valuable cards (every printing, priced), highest first. Excludes
+ * basic lands. `unique=prints` so a card's pricier treatment (borderless/foil)
+ * can win — we de-dupe by name later, keeping the most valuable version.
+ */
+export async function fetchTopCardsByValue(setCode: string): Promise<any[]> {
+  const res = await scryfallFetch(
+    `https://api.scryfall.com/cards/search?q=${encodeURIComponent(`set:${setCode} -t:basic`)}&unique=prints&order=usd&dir=desc&page=1`
+  );
+  if (!res.ok) return [];
+  const data = (await res.json()) as { data?: any[] };
+  return data.data ?? [];
+}
+
+/**
+ * Pick the top `limit` most valuable, distinct, image-having cards and shape them
+ * into storefront possible-pull cards with their locked per-card odds attached.
+ * Cards are assumed pre-sorted by value descending (see fetchTopCardsByValue), so
+ * de-duping by name keeps the priciest printing of each card.
+ */
+export function buildPossiblePulls(
+  cards: any[],
+  perCardByRarity: Record<string, { pct: number; display: string }>,
+  limit = 5,
+  specials: Special[] = []
+): PossiblePull[] {
+  // Rarest stated special-treatment rate (e.g. the "<1% of boosters" borderless
+  // headliner) — used to label special printings honestly instead of giving them
+  // the standard per-rarity odds, which would overstate these chase cards.
+  const rarestSpecial = [...specials].sort((a, b) => a.percent - b.percent)[0];
+
+  const seen = new Set<string>();
+  const picks: PossiblePull[] = [];
+  for (const c of cards) {
+    if (picks.length >= limit) break;
+    const img = cardImage(c);
+    if (!c.name || !img || seen.has(c.name)) continue;
+    seen.add(c.name);
+
+    const treatment = treatmentOf(c);
+    const rarityLabel = RARITY_LABEL[c.rarity] ?? "Rare";
+    const subtitle = treatment ? `${rarityLabel} · ${treatment}` : rarityLabel;
+    // Special printings use the special-tier odds when the set states one;
+    // otherwise fall back to the card's standard per-rarity odds.
+    const odds = (treatment && rarestSpecial)
+      ? rarestSpecial.display
+      : (c.rarity ? perCardByRarity[c.rarity]?.display : undefined);
+
+    picks.push({
+      id: picks.length + 1,
+      title: c.name,
+      subtitle,
+      probability: odds ?? "",
+      scryfallImage: img,
+      featured: picks.length === 0,
+    });
+  }
+  return picks;
 }
 
 function buildSpecs(set: any, slug: string): { label: string; value: string }[] {
@@ -755,30 +851,35 @@ router.post("/lookup/tcgplayer", async (req, res) => {
         const finalContents = pageDetails.contents ?? generateContents(slug);
         const finalIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
 
-        // Fetch top cards by price + per-rarity counts (for accurate odds) in parallel
-        const [cardsRes, rarityCounts] = await Promise.all([
-          scryfallFetch(`https://api.scryfall.com/cards/search?q=set:${set.code}&order=usd&dir=desc&page=1`),
+        // Fetch the set's most valuable cards + per-rarity counts in parallel
+        const [valueCards, rarityCounts] = await Promise.all([
+          fetchTopCardsByValue(set.code),
           fetchRarityCounts(set.code),
         ]);
 
         // Locked tier table + per-card odds, derived from contents + Scryfall counts
-        const { tiers, perCardByRarity } = computePullData(finalContents, slug, rarityCounts);
+        const { tiers, perCardByRarity, specials } = computePullData(finalContents, slug, rarityCounts);
 
+        // The 5 most valuable distinct cards, ready for the storefront
+        const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, 5, specials);
+
+        // A wider, deduped preview for the admin lookup panel (odds attached)
+        const seenPreview = new Set<string>();
         const topCards: any[] = [];
-        if (cardsRes.ok) {
-          const cardsData = await cardsRes.json() as { data: any[] };
-          for (const c of (cardsData.data ?? []).slice(0, 12)) {
-            const odds = c.rarity ? perCardByRarity[c.rarity] : undefined;
-            topCards.push({
-              id: c.id,
-              name: c.name,
-              imageUrl: c.image_uris?.normal ?? c.card_faces?.[0]?.image_uris?.normal ?? null,
-              usd: c.prices?.usd ?? null,
-              rarity: c.rarity ?? null, // "mythic" | "rare" | "uncommon" | "common"
-              probability: odds?.display ?? "",     // locked per-card odds, e.g. "~3.9%"
-              probabilityPct: odds?.pct ?? null,
-            });
-          }
+        for (const c of valueCards) {
+          if (topCards.length >= 12) break;
+          if (!c.name || seenPreview.has(c.name)) continue;
+          seenPreview.add(c.name);
+          const odds = c.rarity ? perCardByRarity[c.rarity] : undefined;
+          topCards.push({
+            id: c.id,
+            name: c.name,
+            imageUrl: cardImage(c),
+            usd: c.prices?.usd ?? null,
+            rarity: c.rarity ?? null, // "mythic" | "rare" | "uncommon" | "common"
+            probability: odds?.display ?? "",     // locked per-card odds, e.g. "~3.9%"
+            probabilityPct: odds?.pct ?? null,
+          });
         }
 
         res.json({
@@ -788,6 +889,7 @@ router.post("/lookup/tcgplayer", async (req, res) => {
           setName: set.name,
           rarityCounts,
           topCards,
+          possiblePulls,
           scryfallId: null,
           imageUrl: tcgImageUrl ?? topCards[0]?.imageUrl ?? null,
           usd: tcgLowestPrice,

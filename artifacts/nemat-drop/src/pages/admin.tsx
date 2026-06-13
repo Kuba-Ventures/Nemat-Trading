@@ -253,6 +253,7 @@ type LookupResult = {
   usd: string | null;
   rarityCounts?: { common: number; uncommon: number; rare: number; mythic: number };
   topCards: { id: string; name: string; imageUrl: string | null; usd: string | null; rarity?: string; probability?: string; probabilityPct?: number | null }[];
+  possiblePulls?: PossiblePull[];
 };
 
 const emptyForm = {
@@ -585,26 +586,10 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
         if (data.intelReport) setIntelReport(data.intelReport);
         if (data.pullProbabilities?.length) setPullProbs(data.pullProbabilities);
       }
-      // Auto-populate possible pulls from top set cards.
-      // Each card's probability is the accurate per-card odds computed by the
-      // backend (locked at lookup time), not a hardcoded guess.
-      if (data.type === "set" && data.topCards?.length) {
-        const rarityLabel: Record<string, string> = {
-          mythic: "Mythic Rare",
-          rare: "Rare",
-          uncommon: "Uncommon",
-          common: "Common",
-        };
-        setPossiblePulls(
-          data.topCards.slice(0, 8).map((c: any, i: number) => ({
-            id: Date.now() + i,
-            title: c.name,
-            subtitle: rarityLabel[c.rarity] ?? "Rare",
-            probability: c.probability ?? "",
-            scryfallImage: c.imageUrl ?? "",
-            featured: i === 0,
-          }))
-        );
+      // Auto-populate possible pulls: the backend already selected the 5 most
+      // valuable distinct cards for this set, with locked per-card odds attached.
+      if (data.type === "set" && data.possiblePulls?.length) {
+        setPossiblePulls(data.possiblePulls);
       }
     } catch (err: any) {
       setLookupError(err.message ?? "Lookup failed");

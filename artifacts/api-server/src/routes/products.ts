@@ -5,7 +5,8 @@ import {
   resolveSetFromTcgUrl,
   fetchRarityCounts,
   computePullData,
-  rarityFromSubtitle,
+  fetchTopCardsByValue,
+  buildPossiblePulls,
 } from "./scryfall";
 
 const router = Router();
@@ -121,17 +122,15 @@ router.post("/admin/products/relock-pulls", requireAdmin, async (_req, res) => {
       }
 
       const contents: string[] = JSON.parse(p.contents || "[]");
-      const counts = await fetchRarityCounts(resolved.set.code);
-      const { tiers, perCardByRarity } = computePullData(contents, resolved.slug, counts);
+      const [counts, valueCards] = await Promise.all([
+        fetchRarityCounts(resolved.set.code),
+        fetchTopCardsByValue(resolved.set.code),
+      ]);
+      const { tiers, perCardByRarity, specials } = computePullData(contents, resolved.slug, counts);
 
-      // Re-price the existing possible-pull cards in place (same cards/images —
-      // only their locked per-card odds get refreshed) by mapping each card's
-      // subtitle to a rarity. Cards we can't classify keep their prior value.
-      const possiblePulls = (JSON.parse(p.possiblePulls || "[]") as any[]).map((card) => {
-        const rarity = rarityFromSubtitle(card.subtitle ?? "");
-        const odds = rarity ? perCardByRarity[rarity] : undefined;
-        return odds ? { ...card, probability: odds.display } : card;
-      });
+      // Auto-managed: refresh Possible Pulls to the 5 most valuable cards in the
+      // set, with locked per-card odds. Replaces whatever was stored.
+      const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, 5, specials);
 
       await db
         .update(productsTable)
