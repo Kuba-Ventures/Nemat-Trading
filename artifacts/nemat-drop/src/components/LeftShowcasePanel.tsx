@@ -47,19 +47,24 @@ function MiniEmailSignup() {
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
+  const [error, setError] = useState<string | null>(null);
   const inputRef = useRef<HTMLInputElement>(null);
 
   const handleSubmit = useCallback(async (e: React.FormEvent) => {
     e.preventDefault();
     if (!email.trim()) return;
     setLoading(true);
+    setError(null);
     try {
-      await fetch(`${API_URL}/api/subscribe`, {
+      const res = await fetch(`${API_URL}/api/subscribe`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ email: email.trim() }),
       });
+      if (!res.ok) throw new Error("Failed to subscribe");
       setSubmitted(true);
+    } catch {
+      setError("Something went wrong. Please try again.");
     } finally {
       setLoading(false);
     }
@@ -93,6 +98,7 @@ function MiniEmailSignup() {
           </button>
         </form>
       )}
+      {error && <p className="text-[11px] text-red-400 text-center mt-2">{error}</p>}
     </div>
   );
 }
