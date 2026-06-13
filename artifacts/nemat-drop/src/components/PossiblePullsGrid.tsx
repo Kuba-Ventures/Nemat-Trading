@@ -63,14 +63,14 @@ export default function PossiblePullsGrid() {
                 <span className="flex-1 h-px bg-white/10" />
               </div>
             )}
-          <div className="flex flex-col gap-2">
+          <div className="flex flex-col gap-2 min-w-0">
             <ScryfallCard scryfallImage={(pull as any).scryfallImage} title={pull.title} featured={pull.featured} />
-            <div>
-              <p className={`text-sm font-medium leading-tight ${pull.featured ? "text-amber-400" : "text-amber-300/80"}`}>
+            <div className="min-w-0">
+              <p className={`text-[13px] sm:text-sm font-medium leading-tight break-words hyphens-auto ${pull.featured ? "text-amber-400" : "text-amber-300/80"}`}>
                 {pull.title}
               </p>
               {(pull as any).subtitle && (
-                <p className="text-[10px] text-gray-600 mt-0.5 uppercase tracking-wide">{(pull as any).subtitle}</p>
+                <p className="text-[10px] text-gray-600 mt-0.5 uppercase tracking-wide break-words">{(pull as any).subtitle}</p>
               )}
               <p className="text-xs text-gray-500 mt-0.5">{pull.probability}</p>
             </div>
