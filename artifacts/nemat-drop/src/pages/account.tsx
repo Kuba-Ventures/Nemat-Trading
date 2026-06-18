@@ -64,6 +64,8 @@ export default function AccountPage() {
   const [mode, setMode] = useState<Mode>("signin");
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [confirmPassword, setConfirmPassword] = useState("");
+  const [showPassword, setShowPassword] = useState(false);
   const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState(""); // "check your email"-style confirmations
   const [error, setError] = useState("");
@@ -119,6 +121,8 @@ export default function AccountPage() {
     setError("");
     setNotice("");
     setPassword("");
+    setConfirmPassword("");
+    setShowPassword(false);
   }
 
   async function handleSubmit(e: React.FormEvent) {
@@ -138,6 +142,10 @@ export default function AccountPage() {
         if (err) throw err;
         // session updates via onAuthStateChange
       } else if (mode === "signup") {
+        if (password !== confirmPassword) {
+          setError("Passwords don't match.");
+          return;
+        }
         const { data, error: err } = await supabase.auth.signUp({
           email: addr,
           password,
@@ -279,14 +287,37 @@ export default function AccountPage() {
                 className={inputClass}
               />
               {mode !== "reset" && (
+                <div className="relative">
+                  <input
+                    type={showPassword && mode === "signup" ? "text" : "password"}
+                    required
+                    minLength={6}
+                    value={password}
+                    onChange={(e) => setPassword(e.target.value)}
+                    placeholder={mode === "signup" ? "Create a password (min 6 characters)" : "Password"}
+                    autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                    className={`${inputClass} w-full ${mode === "signup" ? "pr-16" : ""}`}
+                  />
+                  {mode === "signup" && (
+                    <button
+                      type="button"
+                      onClick={() => setShowPassword((v) => !v)}
+                      className="absolute inset-y-0 right-3 my-auto h-min text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500 hover:text-cyan-400 transition-colors"
+                    >
+                      {showPassword ? "Hide" : "Show"}
+                    </button>
+                  )}
+                </div>
+              )}
+              {mode === "signup" && (
                 <input
-                  type="password"
+                  type={showPassword ? "text" : "password"}
                   required
                   minLength={6}
-                  value={password}
-                  onChange={(e) => setPassword(e.target.value)}
-                  placeholder={mode === "signup" ? "Create a password (min 6 characters)" : "Password"}
-                  autoComplete={mode === "signup" ? "new-password" : "current-password"}
+                  value={confirmPassword}
+                  onChange={(e) => setConfirmPassword(e.target.value)}
+                  placeholder="Confirm password"
+                  autoComplete="new-password"
                   className={inputClass}
                 />
               )}
