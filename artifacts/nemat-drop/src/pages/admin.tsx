@@ -606,10 +606,15 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     setStylingIntel(true);
     setStyleError(null);
     try {
+      // Seed Claude with this pack's headliner cards so the copy names real characters.
+      const chaseCards = possiblePulls
+        .filter((p) => /mythic|rare/i.test(p.subtitle))
+        .map((p) => p.title)
+        .slice(0, 6);
       const res = await fetch(`${API_URL}/api/intel-report/restyle`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ intelReport, productTitle: form.title }),
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify({ intelReport, productTitle: form.title, chaseCards }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error ?? "Style failed");
@@ -940,7 +945,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
               <textarea value={intelReport} onChange={(e) => setIntelReport(e.target.value)} rows={6}
                 placeholder={"Write product description paragraphs here.\n\nSeparate paragraphs with a blank line."}
                 className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40 resize-y font-sans" />
-              {styleError && <p className="text-[10px] text-red-400 mt-1">{styleError}</p>}
+              {styleError && <p className="text-xs text-red-400 mt-2 rounded border border-red-400/30 bg-red-400/10 px-3 py-2">Style It failed: {styleError}</p>}
               <p className="text-[10px] text-gray-600 mt-1">Separate paragraphs with a blank line. "Style It" rewrites in TTD brand voice.</p>
             </div>
 

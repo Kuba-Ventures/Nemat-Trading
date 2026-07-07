@@ -707,17 +707,22 @@ export async function fetchTopCardsByValue(setCode: string): Promise<any[]> {
  * Cards are assumed pre-sorted by value descending (see fetchTopCardsByValue), so
  * de-duping by name keeps the priciest printing of each card.
  */
-// How the possible-pulls showcase is composed: the top chase cards by value,
-// then a sampling of the set's nicest uncommons + commons so the lineup shows
-// the everyday pulls too (not just the headliners).
-const TOP_VALUE_COUNT = 5;
+// How the possible-pulls showcase is composed: the top chase cards ranked by
+// rarity first (mythics, then rares) with $ value as the tiebreak, then a
+// sampling of the set's nicest uncommons + commons so the lineup shows the
+// everyday pulls too (not just the headliners).
+const TOP_CHASE_COUNT = 5;
 const UNCOMMON_COUNT = 3;
 const COMMON_COUNT = 2;
 
+// Higher rank = rarer. Used to order the chase group rarity-first.
+const RARITY_RANK: Record<string, number> = { mythic: 4, rare: 3, uncommon: 2, common: 1 };
+
 /**
- * Build the possible-pulls showcase: the {@link TOP_VALUE_COUNT} most valuable
- * distinct cards, followed by the priciest uncommons and commons. `cards` must be
- * pre-sorted by value descending (see {@link fetchTopCardsByValue}).
+ * Build the possible-pulls showcase: the {@link TOP_CHASE_COUNT} rarest distinct
+ * cards (mythics first, then rares, value as the tiebreak within each tier),
+ * followed by the priciest uncommons and commons. `cards` must be pre-sorted by
+ * value descending (see {@link fetchTopCardsByValue}).
  */
 export function buildPossiblePulls(
   cards: any[],
@@ -732,9 +737,9 @@ export function buildPossiblePulls(
 
   // Pick up to `limit` distinct, image-having cards (optionally filtered to a set
   // of rarities), most valuable first. Mutates `seen` so groups don't overlap.
-  const take = (limit: number, rarities?: Set<string>) => {
+  const take = (limit: number, rarities?: Set<string>, source: any[] = cards) => {
     const out: Omit<PossiblePull, "id" | "featured">[] = [];
-    for (const c of cards) {
+    for (const c of source) {
       if (out.length >= limit) break;
       const img = cardImage(c);
       if (!c.name || !img || seen.has(c.name)) continue;
@@ -754,8 +759,17 @@ export function buildPossiblePulls(
     return out;
   };
 
+  // Chase group: rarity first (mythics before rares), value as the tiebreak.
+  // `cards` is already value-desc and Array.sort is stable, so sorting by rarity
+  // rank keeps the value ordering within each tier. Restrict to rare+mythic so
+  // the headliners are always the genuinely rare cards; if a set somehow has
+  // fewer than 5, we simply show what exists.
+  const chaseRanked = [...cards]
+    .filter((c) => c.rarity === "mythic" || c.rarity === "rare")
+    .sort((a, b) => (RARITY_RANK[b.rarity] ?? 0) - (RARITY_RANK[a.rarity] ?? 0));
+
   const composed = [
-    ...take(TOP_VALUE_COUNT),
+    ...take(TOP_CHASE_COUNT, undefined, chaseRanked),
     ...take(UNCOMMON_COUNT, new Set(["uncommon"])),
     ...take(COMMON_COUNT, new Set(["common"])),
   ];
@@ -864,7 +878,7 @@ router.post("/lookup/tcgplayer", async (req, res) => {
 
       if (set) {
         const finalContents = pageDetails.contents ?? generateContents(slug);
-        const finalIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
+        const baseIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
 
         // Fetch the set's most valuable cards + per-rarity counts in parallel
         const [valueCards, rarityCounts] = await Promise.all([
@@ -877,6 +891,19 @@ router.post("/lookup/tcgplayer", async (req, res) => {
 
         // Top chase cards + a sampling of uncommons/commons, ready for the storefront
         const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
+
+        // Auto-style the intel report in TTD voice on every lookup, seeding Claude
+        // with this set's headliner cards so the copy names real characters. Falls
+        // back to the base boilerplate if ANTHROPIC_API_KEY is unset or the call fails.
+        const chaseCards = possiblePulls
+          .filter((p) => /mythic|rare/i.test(p.subtitle))
+          .map((p) => p.title)
+          .slice(0, 6);
+        const finalIntelReport = await styleIntelReportSafe({
+          report: baseIntelReport,
+          productTitle: suggestedTitle,
+          chaseCards,
+        });
 
         // A wider, deduped preview for the admin lookup panel (odds attached)
         const seenPreview = new Set<string>();
@@ -960,33 +987,26 @@ router.post("/lookup/tcgplayer", async (req, res) => {
   }
 });
 
-// Restyle intel report in the TTD brand voice using Claude
-router.post("/intel-report/restyle", requireAdmin, async (req, res) => {
-  const { intelReport, productTitle } = req.body as { intelReport?: string; productTitle?: string };
-  if (!intelReport) { res.status(400).json({ error: "intelReport required" }); return; }
+// ─── Intel report styling (TTD brand voice via Claude) ───────────────────────────
 
-  const apiKey = process.env.ANTHROPIC_API_KEY;
-  if (!apiKey) { res.status(503).json({ error: "ANTHROPIC_API_KEY not configured on Railway" }); return; }
+const INTEL_MODEL = "claude-sonnet-5";
 
-  try {
-    const response = await fetch("https://api.anthropic.com/v1/messages", {
-      method: "POST",
-      headers: {
-        "x-api-key": apiKey,
-        "anthropic-version": "2023-06-01",
-        "content-type": "application/json",
-      },
-      body: JSON.stringify({
-        model: "claude-haiku-4-5-20251001",
-        max_tokens: 800,
-        messages: [{
-          role: "user",
-          content: `You write intel copy for Tommy Top Decker Trading Co, a Magic: The Gathering sealed product drop shop. Write a short, punchy product intel report for the product below.
+/**
+ * The TTD house-voice prompt: cheesy, lore-first, set-specific copy modeled on the
+ * TMNT example. `chaseCards` (iconic/valuable card names for the set) let Claude
+ * name real characters even for sets it knows less well.
+ */
+function buildIntelPrompt(report: string, productTitle: string | undefined, chaseCards: string[] = []): string {
+  const chaseLine = chaseCards.length
+    ? `\nHEADLINE CARDS IN THIS SET (weave a few in by name for authentic flavor, but do NOT talk about their rarity or value): ${chaseCards.join(", ")}\n`
+    : "";
+  return `You write intel copy for Tommy Top Decker Trading Co, a Magic: The Gathering sealed product drop shop. Write a short, punchy product intel report for the product below.
 
 RULES — follow every one exactly:
 - No em dashes (never use — or –)
 - No mention of card rarity, card quality, foils, or how good cards look. Zero.
 - Lead with the LORE and WORLD of the product. What is this IP, universe, or setting? What makes it culturally special? Reference specific characters, places, events, or jokes from the source material the way the TMNT example uses pizza and the sewer lair.
+- Be a little cheesy. Lean into the niche. Sound like a superfan who knows the deep cuts of this world, not a generic hype-man.
 - Short punchy paragraphs. Energy. Personality. Like a collector who actually loves this stuff wrote it.
 - 4 to 6 paragraphs max.
 - Plain text only. Paragraphs separated by a single blank line. No headers, bullets, or markdown.
@@ -1000,23 +1020,69 @@ And yes... there's a chance at the borderless source-material cards dripping wit
 
 I mean... come on. That's basically the cardboard equivalent of finding the secret entrance to the sewer lair.
 
-PRODUCT: ${productTitle ?? "Magic: The Gathering Product"}
-CONTEXT: ${intelReport}
+PRODUCT: ${productTitle ?? "Magic: The Gathering Product"}${chaseLine}
+CONTEXT: ${report}
 
-Write the intel report now:`,
-        }],
-      }),
-    });
+Write the intel report now:`;
+}
 
-    if (!response.ok) {
-      const err: any = await response.json().catch(() => ({}));
-      res.status(500).json({ error: err.error?.message ?? "Anthropic API failed" });
-      return;
-    }
+/** Call Claude with a prepared intel prompt. Throws on any API/network failure. */
+async function callClaudeIntel(apiKey: string, prompt: string): Promise<string> {
+  const response = await fetch("https://api.anthropic.com/v1/messages", {
+    method: "POST",
+    headers: {
+      "x-api-key": apiKey,
+      "anthropic-version": "2023-06-01",
+      "content-type": "application/json",
+    },
+    body: JSON.stringify({
+      model: INTEL_MODEL,
+      max_tokens: 800,
+      messages: [{ role: "user", content: prompt }],
+    }),
+  });
+  if (!response.ok) {
+    const err: any = await response.json().catch(() => ({}));
+    throw new Error(err.error?.message ?? "Anthropic API failed");
+  }
+  const data: any = await response.json();
+  return (data.content?.[0]?.text ?? "").trim();
+}
 
-    const data: any = await response.json();
-    const text: string = data.content?.[0]?.text ?? "";
-    res.json({ intelReport: text.trim() });
+/**
+ * Style an intel report in the TTD voice, NEVER throwing: if the key is missing or
+ * the API fails, returns the original report unchanged. Used to auto-style on every
+ * lookup so the admin never sees the generic boilerplate — degrades gracefully when
+ * ANTHROPIC_API_KEY isn't set on the server.
+ */
+async function styleIntelReportSafe(opts: { report: string; productTitle?: string; chaseCards?: string[] }): Promise<string> {
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!opts.report || !apiKey) {
+    if (!apiKey) console.warn("[intel] ANTHROPIC_API_KEY not set — returning un-styled boilerplate");
+    return opts.report;
+  }
+  try {
+    const styled = await callClaudeIntel(apiKey, buildIntelPrompt(opts.report, opts.productTitle, opts.chaseCards));
+    return styled || opts.report;
+  } catch (err: any) {
+    console.warn("[intel] auto-style failed, returning boilerplate:", err?.message);
+    return opts.report;
+  }
+}
+
+// Restyle intel report in the TTD brand voice using Claude (manual "Style It" button).
+// Surfaces errors to the admin (503 if no key, 500 on API failure) — unlike the
+// auto-style path, which silently falls back.
+router.post("/intel-report/restyle", requireAdmin, async (req, res) => {
+  const { intelReport, productTitle, chaseCards } = req.body as { intelReport?: string; productTitle?: string; chaseCards?: string[] };
+  if (!intelReport) { res.status(400).json({ error: "intelReport required" }); return; }
+
+  const apiKey = process.env.ANTHROPIC_API_KEY;
+  if (!apiKey) { res.status(503).json({ error: "ANTHROPIC_API_KEY not configured on Railway" }); return; }
+
+  try {
+    const text = await callClaudeIntel(apiKey, buildIntelPrompt(intelReport, productTitle, chaseCards));
+    res.json({ intelReport: text });
   } catch (err: any) {
     res.status(500).json({ error: err.message ?? "Failed to restyle" });
   }
