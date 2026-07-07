@@ -536,6 +536,9 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
   const [lookupError, setLookupError] = useState<string | null>(null);
   const [stylingIntel, setStylingIntel] = useState(false);
   const [styleError, setStyleError] = useState<string | null>(null);
+  const [syncingPulls, setSyncingPulls] = useState(false);
+  const [syncPullsError, setSyncPullsError] = useState<string | null>(null);
+  const [syncPullsNote, setSyncPullsNote] = useState<string | null>(null);
   // TCG market price used as reference for auto-calculating discount %
   const [tcgMarketPrice, setTcgMarketPrice] = useState(
     product?.tcgMarketPriceCents ? (product.tcgMarketPriceCents / 100).toFixed(2) : ""
@@ -615,6 +618,34 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
       setStyleError(err.message ?? "Failed to style");
     } finally {
       setStylingIntel(false);
+    }
+  }
+
+  // Refresh ONLY the pull probabilities + possible-pull cards straight from
+  // Scryfall, keyed off the current TCGPlayer URL. Leaves every other field
+  // (title, price, image, specs, contents, intel report) untouched — idempotent,
+  // safe to re-run. The admin still reviews and saves.
+  async function handleSyncPulls() {
+    const url = form.tcgplayerUrl.trim();
+    if (!url) { setSyncPullsError("Add a TCGPlayer URL first — it's used to find the Scryfall set."); return; }
+    setSyncingPulls(true);
+    setSyncPullsError(null);
+    setSyncPullsNote(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/products/sync-pulls`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
+        body: JSON.stringify({ tcgplayerUrl: url, contents }),
+      });
+      const data = await res.json();
+      if (!res.ok) { setSyncPullsError(data.error ?? "Sync failed"); return; }
+      if (data.pullProbabilities?.length) setPullProbs(data.pullProbabilities);
+      if (data.possiblePulls?.length) setPossiblePulls(data.possiblePulls);
+      setSyncPullsNote(`Synced from ${data.setName ?? data.setCode ?? "Scryfall"} — ${data.possiblePulls?.length ?? 0} cards. Review, then Save.`);
+    } catch (err: any) {
+      setSyncPullsError(err.message ?? "Sync failed");
+    } finally {
+      setSyncingPulls(false);
     }
   }
 
@@ -972,6 +1003,28 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
                 >+</button>
               </div>
               <p className="text-[9px] text-gray-700 mt-2">★ = featured on storefront · hover card to edit or delete</p>
+            </div>
+
+            {/* Sync pulls + probabilities from Scryfall (keyed off the TCGPlayer URL) */}
+            <div className="rounded border border-white/10 bg-white/[0.02] p-3">
+              <div className="flex items-center justify-between gap-3">
+                <div>
+                  <p className="text-[10px] uppercase tracking-[0.2em] text-gray-500">Sync from Scryfall</p>
+                  <p className="text-[10px] text-gray-600 mt-0.5">
+                    Recomputes Pull Probabilities + Possible Pulls (top-5 by value, plus uncommons &amp; commons, with photos) from the TCGPlayer URL's set. Leaves everything else untouched.
+                  </p>
+                </div>
+                <button
+                  type="button"
+                  onClick={handleSyncPulls}
+                  disabled={syncingPulls || !form.tcgplayerUrl.trim()}
+                  className="rounded border border-cyan-400/30 px-3 py-2 text-[10px] uppercase tracking-[0.15em] text-cyan-400 hover:bg-cyan-400/10 transition-colors disabled:opacity-40 whitespace-nowrap"
+                >
+                  {syncingPulls ? "Syncing..." : "Sync from Scryfall"}
+                </button>
+              </div>
+              {syncPullsNote && <p className="text-[10px] text-cyan-400/80 mt-2">{syncPullsNote}</p>}
+              {syncPullsError && <p className="text-[10px] text-red-400 mt-2">{syncPullsError}</p>}
             </div>
 
           </div>
