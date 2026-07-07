@@ -41,12 +41,26 @@ function doPost(e) {
     if (!sheet) {
       return json({ ok: false, error: 'unknown tab: ' + body.tab });
     }
-    // action:'clear' wipes data rows (keeps the header) so a full re-sync from the
-    // API doesn't duplicate existing rows.
+    // action:'clear' wipes data rows (keeps the header). Kept for manual use only —
+    // the API no longer calls it, because clearing is destructive to any rows that
+    // aren't in the database.
     if (body.action === 'clear') {
       const last = sheet.getLastRow();
       if (last > 1) sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).clearContent();
       return json({ ok: true, cleared: Math.max(0, last - 1) });
+    }
+    // Idempotent append: if dedupeCol (1-based) is given and that key already exists
+    // in the tab, skip instead of adding a duplicate. Makes backfills safe to re-run
+    // and never removes anything.
+    if (body.dedupeCol) {
+      const rows = sheet.getLastRow() - 1; // exclude header
+      if (rows > 0) {
+        const existing = sheet.getRange(2, body.dedupeCol, rows, 1).getValues();
+        const key = String(body.row[body.dedupeCol - 1]);
+        for (var i = 0; i < existing.length; i++) {
+          if (String(existing[i][0]) === key) return json({ ok: true, skipped: true });
+        }
+      }
     }
     sheet.appendRow(body.row);
     return json({ ok: true });

@@ -1192,9 +1192,10 @@ function OrderList({ adminKey }: { adminKey: string }) {
     }
   }
 
-  // Full re-sync of the email waitlist + orders to the Google Sheet. Reads from the
-  // DB, so run "Sync from Stripe" first if orders are missing. Clears both tabs and
-  // re-appends (idempotent). Surfaces a specific reason when the sheet is unreachable.
+  // Backfill the email waitlist + orders from the DB into the Google Sheet.
+  // Non-destructive: adds only rows not already present, never deletes. Reads from
+  // the DB, so run "Sync from Stripe" first to pull in orders. Surfaces the first
+  // failure reason when the sheet is unreachable/misconfigured.
   async function syncSheets() {
     setSyncingSheet(true);
     setSheetMsg("");
@@ -1204,9 +1205,13 @@ function OrderList({ adminKey }: { adminKey: string }) {
         headers: { "x-admin-key": adminKey },
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.detail ? `${data.error} (${JSON.stringify(data.detail)})` : (data.error ?? `API returned ${res.status}`));
-      setSheetMsg(`Sheet synced · ${data.subscribers.synced} emails, ${data.orders.synced} orders` +
-        (data.subscribers.failed || data.orders.failed ? ` · ${data.subscribers.failed + data.orders.failed} failed` : ""));
+      if (!res.ok) throw new Error(data.error ?? `API returned ${res.status}`);
+      const failed = (data.subscribers.failed ?? 0) + (data.orders.failed ?? 0);
+      if (failed > 0) {
+        setSheetMsg(`Sheet sync failed: ${data.error ?? "unknown"} (${failed} rows not written)`);
+      } else {
+        setSheetMsg(`Sheet backfilled · ${data.subscribers.synced} emails, ${data.orders.synced} orders (existing rows kept)`);
+      }
     } catch (err: any) {
       setSheetMsg(err.message ?? "Sheet sync failed");
     } finally {
@@ -1243,7 +1248,7 @@ function OrderList({ adminKey }: { adminKey: string }) {
           <button
             onClick={syncSheets}
             disabled={syncingSheet}
-            title="Re-push the email waitlist + orders from the database to the Google Sheet"
+            title="Backfill the email waitlist + orders from the database into the Google Sheet. Adds missing rows only — never deletes."
             className="rounded border border-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-50"
           >
             {syncingSheet ? "Syncing…" : "Re-sync Google Sheet"}
