@@ -1156,6 +1156,8 @@ function OrderList({ adminKey }: { adminKey: string }) {
   const [expanded, setExpanded] = useState<number | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncMsg, setSyncMsg] = useState("");
+  const [syncingSheet, setSyncingSheet] = useState(false);
+  const [sheetMsg, setSheetMsg] = useState("");
 
   async function load() {
     setLoading(true);
@@ -1190,6 +1192,28 @@ function OrderList({ adminKey }: { adminKey: string }) {
     }
   }
 
+  // Full re-sync of the email waitlist + orders to the Google Sheet. Reads from the
+  // DB, so run "Sync from Stripe" first if orders are missing. Clears both tabs and
+  // re-appends (idempotent). Surfaces a specific reason when the sheet is unreachable.
+  async function syncSheets() {
+    setSyncingSheet(true);
+    setSheetMsg("");
+    try {
+      const res = await fetch(`${API_URL}/api/admin/sync-sheets`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.detail ? `${data.error} (${JSON.stringify(data.detail)})` : (data.error ?? `API returned ${res.status}`));
+      setSheetMsg(`Sheet synced · ${data.subscribers.synced} emails, ${data.orders.synced} orders` +
+        (data.subscribers.failed || data.orders.failed ? ` · ${data.subscribers.failed + data.orders.failed} failed` : ""));
+    } catch (err: any) {
+      setSheetMsg(err.message ?? "Sheet sync failed");
+    } finally {
+      setSyncingSheet(false);
+    }
+  }
+
   useEffect(() => { load(); }, []);
 
   const revenueCents = orders.reduce((sum, o) => sum + o.totalCents, 0);
@@ -1208,12 +1232,21 @@ function OrderList({ adminKey }: { adminKey: string }) {
             </span>
           )}
           {syncMsg && <span className="text-xs text-gray-500">{syncMsg}</span>}
+          {sheetMsg && <span className="text-xs text-gray-500">{sheetMsg}</span>}
           <button
             onClick={syncFromStripe}
             disabled={syncing}
             className="rounded border border-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-50"
           >
             {syncing ? "Syncing…" : "Sync from Stripe"}
+          </button>
+          <button
+            onClick={syncSheets}
+            disabled={syncingSheet}
+            title="Re-push the email waitlist + orders from the database to the Google Sheet"
+            className="rounded border border-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-50"
+          >
+            {syncingSheet ? "Syncing…" : "Re-sync Google Sheet"}
           </button>
         </div>
       </div>
