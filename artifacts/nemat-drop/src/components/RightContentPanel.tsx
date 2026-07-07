@@ -2,6 +2,7 @@ import ProductHeroSection from "./ProductHeroSection";
 import ProductSpecifications from "./ProductSpecifications";
 import PullProbabilityChart from "./PullProbabilityChart";
 import PossiblePullsGrid from "./PossiblePullsGrid";
+import EmailSignup from "./EmailSignup";
 import PurchaseBar from "./PurchaseBar";
 import IntelReport from "./IntelReport";
 
@@ -14,6 +15,7 @@ export default function RightContentPanel() {
         <IntelReport />
         <PullProbabilityChart />
         <PossiblePullsGrid />
+        <EmailSignup />
 
         {/* Footer spacing for sticky bar */}
         <div className="h-24" />
