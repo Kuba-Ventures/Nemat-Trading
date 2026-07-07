@@ -45,9 +45,18 @@ async function postToSheet(payload: Record<string, unknown>): Promise<SheetResul
   }
 }
 
-/** Append one row to a tab. Returns success + a reason on failure (never throws). */
-export async function appendToSheet(tab: SheetTab, row: unknown[]): Promise<SheetResult> {
-  const result = await postToSheet({ tab, row });
+/**
+ * Append one row to a tab. Returns success + a reason on failure (never throws).
+ * Pass `dedupeCol` (1-based column of the row's unique key — Email for the Email
+ * List, Order ID for Orders) to make the append idempotent: the Apps Script skips
+ * the row if that key already exists, so backfills never create duplicates.
+ */
+export async function appendToSheet(
+  tab: SheetTab,
+  row: unknown[],
+  opts?: { dedupeCol?: number },
+): Promise<SheetResult> {
+  const result = await postToSheet({ tab, row, dedupeCol: opts?.dedupeCol });
   if (!result.ok) console.error(`[sheets] ${tab} append failed: ${result.error}`);
   return result;
 }

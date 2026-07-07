@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, subscribersTable, ordersTable, productsTable } from "@workspace/db";
-import { appendToSheet, clearSheet } from "../lib/sheets";
+import { appendToSheet } from "../lib/sheets";
 import { locationFromIp } from "../lib/geo";
 
 const router = Router();
@@ -31,7 +31,7 @@ router.post("/subscribe", async (req, res) => {
             normalized,
             location,
             "Member",
-          ]),
+          ], { dedupeCol: 2 }),
         )
         .catch((err) => console.error("[subscribe] sheet append failed:", err));
     }
@@ -60,39 +60,30 @@ router.get("/admin/subscribers", requireAdmin, async (_req, res) => {
   res.json(rows);
 });
 
-// Admin: re-emit all subscribers and orders to the sheet (full re-sync).
-// Clears each tab's data rows first (via the Apps Script) so re-running is
-// idempotent and never duplicates. If the sheet can't be reached — the usual
-// cause is a SHEETS_WEBHOOK_URL/secret or Apps Script access misconfig — abort
-// before writing anything and return the specific reason.
+// Admin: backfill all subscribers and orders from the DB into the sheet.
+// NON-DESTRUCTIVE: appends only rows not already present (dedupe by Email / Order
+// ID via the Apps Script), and never clears or removes anything. Safe to re-run.
+// Surfaces the first failure reason (usually a SHEETS_WEBHOOK_URL/secret or Apps
+// Script access misconfig) so a broken sync is diagnosable instead of silent.
 router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
-  const clearedEmail = await clearSheet("Email List");
-  const clearedOrders = await clearSheet("Orders");
-  if (!clearedEmail.ok || !clearedOrders.ok) {
-    res.status(502).json({
-      error:
-        "Couldn't reach the Google Sheet. Check SHEETS_WEBHOOK_URL + secret and the Apps Script web-app deployment.",
-      detail: { emailList: clearedEmail.error, orders: clearedOrders.error },
-    });
-    return;
-  }
+  let firstError: string | undefined;
 
   const subs = await db
     .select()
     .from(subscribersTable)
     .orderBy(subscribersTable.subscribedAt);
-  // Email List: Timestamp | Email | Location | Status
+  // Email List: Timestamp | Email | Location | Status (dedupe on Email, col 2).
   // (Location is blank for backfill — no IP captured at original signup time.)
   let emailSynced = 0;
   let emailFailed = 0;
   for (const s of subs) {
-    const r = await appendToSheet("Email List", [
-      s.subscribedAt.toISOString(),
-      s.email,
-      "",
-      "Member",
-    ]);
-    r.ok ? emailSynced++ : emailFailed++;
+    const r = await appendToSheet(
+      "Email List",
+      [s.subscribedAt.toISOString(), s.email, "", "Member"],
+      { dedupeCol: 2 },
+    );
+    if (r.ok) emailSynced++;
+    else { emailFailed++; firstError ??= r.error; }
   }
 
   const orders = await db.select().from(ordersTable).orderBy(ordersTable.createdAt);
@@ -133,13 +124,15 @@ router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
       "",
       "",
       "",
-    ]);
-    r.ok ? ordersSynced++ : ordersFailed++;
+    ], { dedupeCol: 2 });
+    if (r.ok) ordersSynced++;
+    else { ordersFailed++; firstError ??= r.error; }
   }
 
   res.json({
     subscribers: { total: subs.length, synced: emailSynced, failed: emailFailed },
     orders: { total: orders.length, synced: ordersSynced, failed: ordersFailed },
+    error: firstError,
   });
 });
 

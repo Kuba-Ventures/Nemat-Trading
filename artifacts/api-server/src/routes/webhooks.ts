@@ -100,7 +100,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       addr?.postal_code ?? "",
       addr?.country ?? "",
       paymentIntentId,
-    ]);
+    ], { dedupeCol: 2 });
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);
   } catch (err) {
