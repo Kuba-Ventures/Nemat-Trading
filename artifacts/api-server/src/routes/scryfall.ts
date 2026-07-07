@@ -490,6 +490,72 @@ export async function fetchRarityCounts(setCode: string): Promise<RarityCounts> 
   return { common: counts[0], uncommon: counts[1], rare: counts[2], mythic: counts[3] };
 }
 
+export type TreatmentCounts = { borderless: number; showcase: number; extended: number; serialized: number };
+
+/**
+ * Count how many nonbasic cards in a set carry each premium treatment (Scryfall).
+ * A bad/empty query just yields 0 (Scryfall 404s on no matches), so an unsupported
+ * filter degrades to "no tier" rather than throwing.
+ */
+export async function fetchSpecialTreatments(setCode: string): Promise<TreatmentCounts> {
+  const queries: [keyof TreatmentCounts, string][] = [
+    ["borderless", `set:${setCode} is:borderless -t:basic`],
+    ["showcase", `set:${setCode} is:showcase -t:basic`],
+    ["extended", `set:${setCode} is:extendedart -t:basic`],
+    ["serialized", `set:${setCode} is:serialized -t:basic`],
+  ];
+  const entries = await Promise.all(
+    queries.map(async ([key, q]) => {
+      try {
+        const res = await scryfallFetch(
+          `https://api.scryfall.com/cards/search?q=${encodeURIComponent(q)}&unique=cards`
+        );
+        if (!res.ok) return [key, 0] as const;
+        const d = (await res.json()) as { total_cards?: number; data?: any[] };
+        return [key, d.total_cards ?? d.data?.length ?? 0] as const;
+      } catch {
+        return [key, 0] as const;
+      }
+    })
+  );
+  return { borderless: 0, showcase: 0, extended: 0, serialized: 0, ...Object.fromEntries(entries) };
+}
+
+const TREATMENT_META: Record<keyof TreatmentCounts, { label: string; abbr: string; color: string }> = {
+  borderless: { label: "Borderless", abbr: "B", color: "#a78bfa" },
+  showcase: { label: "Showcase", abbr: "S", color: "#c084fc" },
+  extended: { label: "Extended Art", abbr: "X", color: "#818cf8" },
+  serialized: { label: "Serialized", abbr: "#", color: "#f472b6" },
+};
+
+/**
+ * Estimated per-pack odds for premium treatments, from how large a share of the
+ * set's rare+mythic pool carries each treatment, spread across the pack's rare-or-
+ * higher slots. Wizards doesn't publish these rates, so these are ESTIMATES (biased
+ * high for draft boosters, where treatments are actually scarce) and every display
+ * is suffixed "est." so it never reads as an official rate. Official rates stated in
+ * the pack Contents override these (see computePullData).
+ */
+function estimatedTreatmentTiers(
+  treatments: TreatmentCounts,
+  slots: SlotCounts,
+  counts: RarityCounts
+): Special[] {
+  const pool = counts.rare + counts.mythic;
+  if (pool <= 0 || slots.rarePlus <= 0) return [];
+  const out: Special[] = [];
+  for (const key of Object.keys(TREATMENT_META) as (keyof TreatmentCounts)[]) {
+    const n = treatments[key];
+    if (!n) continue;
+    const share = Math.min(1, n / pool);
+    const pct = probAtLeastOne(share, slots.rarePlus) * 100;
+    if (pct <= 0) continue;
+    const { label, abbr, color } = TREATMENT_META[key];
+    out.push({ label, abbr, display: `${pctDisplay(pct)} est.`, percent: Math.max(1, Math.round(pct)), color });
+  }
+  return out;
+}
+
 /** Odds a specific named card of a given rarity appears in one pack. */
 export function perCardOdds(
   rarity: string,
@@ -571,14 +637,22 @@ function computeTiers(
 export function computePullData(
   contents: string[],
   slug: string,
-  counts: RarityCounts
+  counts: RarityCounts,
+  treatments?: TreatmentCounts
 ): {
   tiers: Tier[];
   perCardByRarity: Record<string, { pct: number; display: string }>;
   specials: Special[];
 } {
   const slots = parseSlotCounts(contents, slug);
-  const specials = parseSpecials(contents);
+  // Official special rates stated in the pack Contents win over Scryfall estimates
+  // of the same treatment (dedupe by abbr), so we never overwrite a real number.
+  const contentsSpecials = parseSpecials(contents);
+  const takenAbbrs = new Set(contentsSpecials.map((s) => s.abbr));
+  const estSpecials = treatments
+    ? estimatedTreatmentTiers(treatments, slots, counts).filter((s) => !takenAbbrs.has(s.abbr))
+    : [];
+  const specials = [...contentsSpecials, ...estSpecials];
   const tiers = computeTiers(slots, counts, specials);
 
   const perCardByRarity: Record<string, { pct: number; display: string }> = {};
@@ -880,14 +954,16 @@ router.post("/lookup/tcgplayer", async (req, res) => {
         const finalContents = pageDetails.contents ?? generateContents(slug);
         const baseIntelReport = pageDetails.intelReport ?? generateIntelReport(set, slug);
 
-        // Fetch the set's most valuable cards + per-rarity counts in parallel
-        const [valueCards, rarityCounts] = await Promise.all([
+        // Fetch the set's most valuable cards + per-rarity counts + premium-treatment
+        // counts in parallel
+        const [valueCards, rarityCounts, treatments] = await Promise.all([
           fetchTopCardsByValue(set.code),
           fetchRarityCounts(set.code),
+          fetchSpecialTreatments(set.code),
         ]);
 
         // Locked tier table + per-card odds, derived from contents + Scryfall counts
-        const { tiers, perCardByRarity, specials } = computePullData(finalContents, slug, rarityCounts);
+        const { tiers, perCardByRarity, specials } = computePullData(finalContents, slug, rarityCounts, treatments);
 
         // Top chase cards + a sampling of uncommons/commons, ready for the storefront
         const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
