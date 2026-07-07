@@ -4,6 +4,7 @@ import { eq } from "drizzle-orm";
 import {
   resolveSetFromTcgUrl,
   fetchRarityCounts,
+  fetchSpecialTreatments,
   computePullData,
   fetchTopCardsByValue,
   buildPossiblePulls,
@@ -122,11 +123,12 @@ router.post("/admin/products/relock-pulls", requireAdmin, async (_req, res) => {
       }
 
       const contents: string[] = JSON.parse(p.contents || "[]");
-      const [counts, valueCards] = await Promise.all([
+      const [counts, valueCards, treatments] = await Promise.all([
         fetchRarityCounts(resolved.set.code),
         fetchTopCardsByValue(resolved.set.code),
+        fetchSpecialTreatments(resolved.set.code),
       ]);
-      const { tiers, perCardByRarity, specials } = computePullData(contents, resolved.slug, counts);
+      const { tiers, perCardByRarity, specials } = computePullData(contents, resolved.slug, counts, treatments);
 
       // Auto-managed: refresh Possible Pulls to the top chase cards + a sampling
       // of uncommons/commons, with locked per-card odds. Replaces what was stored.
@@ -170,11 +172,12 @@ router.post("/admin/products/sync-pulls", requireAdmin, async (req, res) => {
     }
 
     const packContents: string[] = Array.isArray(contents) ? contents : [];
-    const [counts, valueCards] = await Promise.all([
+    const [counts, valueCards, treatments] = await Promise.all([
       fetchRarityCounts(resolved.set.code),
       fetchTopCardsByValue(resolved.set.code),
+      fetchSpecialTreatments(resolved.set.code),
     ]);
-    const { tiers, perCardByRarity, specials } = computePullData(packContents, resolved.slug, counts);
+    const { tiers, perCardByRarity, specials } = computePullData(packContents, resolved.slug, counts, treatments);
     const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
 
     res.json({
