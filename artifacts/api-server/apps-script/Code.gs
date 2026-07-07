@@ -63,6 +63,10 @@ function doPost(e) {
       }
     }
     sheet.appendRow(body.row);
+    // appendRow inherits font formatting from the neighboring row, which makes some
+    // rows come in bold. Force the new row to normal weight so data rows stay
+    // visually consistent.
+    sheet.getRange(sheet.getLastRow(), 1, 1, body.row.length).setFontWeight('normal');
     return json({ ok: true });
   } catch (err) {
     return json({ ok: false, error: String(err) });
