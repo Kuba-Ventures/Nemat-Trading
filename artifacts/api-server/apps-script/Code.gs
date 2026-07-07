@@ -41,6 +41,13 @@ function doPost(e) {
     if (!sheet) {
       return json({ ok: false, error: 'unknown tab: ' + body.tab });
     }
+    // action:'clear' wipes data rows (keeps the header) so a full re-sync from the
+    // API doesn't duplicate existing rows.
+    if (body.action === 'clear') {
+      const last = sheet.getLastRow();
+      if (last > 1) sheet.getRange(2, 1, last - 1, sheet.getLastColumn()).clearContent();
+      return json({ ok: true, cleared: Math.max(0, last - 1) });
+    }
     sheet.appendRow(body.row);
     return json({ ok: true });
   } catch (err) {

@@ -1,6 +1,6 @@
 import { Router } from "express";
 import { db, subscribersTable, ordersTable, productsTable } from "@workspace/db";
-import { appendToSheet } from "../lib/sheets";
+import { appendToSheet, clearSheet } from "../lib/sheets";
 import { locationFromIp } from "../lib/geo";
 
 const router = Router();
@@ -60,27 +60,46 @@ router.get("/admin/subscribers", requireAdmin, async (_req, res) => {
   res.json(rows);
 });
 
-// Admin: re-emit all subscribers and orders to the sheet (one-shot backfill).
-// Sheet rows will be appended — clear any existing data rows first to avoid dupes.
+// Admin: re-emit all subscribers and orders to the sheet (full re-sync).
+// Clears each tab's data rows first (via the Apps Script) so re-running is
+// idempotent and never duplicates. If the sheet can't be reached — the usual
+// cause is a SHEETS_WEBHOOK_URL/secret or Apps Script access misconfig — abort
+// before writing anything and return the specific reason.
 router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
+  const clearedEmail = await clearSheet("Email List");
+  const clearedOrders = await clearSheet("Orders");
+  if (!clearedEmail.ok || !clearedOrders.ok) {
+    res.status(502).json({
+      error:
+        "Couldn't reach the Google Sheet. Check SHEETS_WEBHOOK_URL + secret and the Apps Script web-app deployment.",
+      detail: { emailList: clearedEmail.error, orders: clearedOrders.error },
+    });
+    return;
+  }
+
   const subs = await db
     .select()
     .from(subscribersTable)
     .orderBy(subscribersTable.subscribedAt);
   // Email List: Timestamp | Email | Location | Status
   // (Location is blank for backfill — no IP captured at original signup time.)
+  let emailSynced = 0;
+  let emailFailed = 0;
   for (const s of subs) {
-    await appendToSheet("Email List", [
+    const r = await appendToSheet("Email List", [
       s.subscribedAt.toISOString(),
       s.email,
       "",
       "Member",
     ]);
+    r.ok ? emailSynced++ : emailFailed++;
   }
 
   const orders = await db.select().from(ordersTable).orderBy(ordersTable.createdAt);
   const products = await db.select().from(productsTable);
   const titleById = new Map(products.map((p) => [p.id, p.title]));
+  let ordersSynced = 0;
+  let ordersFailed = 0;
   // Orders columns (best-effort from DB — phone, payment intent, and split
   // address fields aren't stored, so they're blank on backfilled rows):
   // Timestamp | Order ID | Email | Order Count | Phone | Name | Item | Subtotal |
@@ -92,7 +111,7 @@ router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
       o.taxCents > 0 && taxableBase > 0
         ? `${((o.taxCents / taxableBase) * 100).toFixed(2)}%`
         : "";
-    await appendToSheet("Orders", [
+    const r = await appendToSheet("Orders", [
       o.createdAt.toISOString(),
       o.stripeSessionId,
       o.customerEmail,
@@ -115,9 +134,13 @@ router.post("/admin/sync-sheets", requireAdmin, async (_req, res) => {
       "",
       "",
     ]);
+    r.ok ? ordersSynced++ : ordersFailed++;
   }
 
-  res.json({ subscribers: subs.length, orders: orders.length });
+  res.json({
+    subscribers: { total: subs.length, synced: emailSynced, failed: emailFailed },
+    orders: { total: orders.length, synced: ordersSynced, failed: ordersFailed },
+  });
 });
 
 export default router;
