@@ -149,4 +149,43 @@ router.post("/admin/products/relock-pulls", requireAdmin, async (_req, res) => {
   res.json({ total: products.length, updated, skipped });
 });
 
+// Admin: sync pull probabilities + possible pulls for a SINGLE pack straight from
+// Scryfall, without touching any other field. Resolves the Scryfall set from the
+// pack's TCGPlayer URL (same matcher as "Look Up" / "Re-lock pull odds"), then
+// recomputes tier hit rates + the top chase cards (with images + locked per-card
+// odds). Does NOT write to the DB — it returns the computed data so the admin form
+// can populate the two editors and the admin reviews before saving. Powers the
+// "Sync from Scryfall" button under the Pull Probabilities / Possible Pulls sections.
+router.post("/admin/products/sync-pulls", requireAdmin, async (req, res) => {
+  const { tcgplayerUrl, contents } = req.body ?? {};
+  if (!tcgplayerUrl || typeof tcgplayerUrl !== "string") {
+    res.status(422).json({ error: "A TCGPlayer URL is required to resolve the Scryfall set." });
+    return;
+  }
+  try {
+    const resolved = await resolveSetFromTcgUrl(tcgplayerUrl);
+    if (!resolved) {
+      res.status(422).json({ error: "Couldn't match a Scryfall set to that TCGPlayer URL." });
+      return;
+    }
+
+    const packContents: string[] = Array.isArray(contents) ? contents : [];
+    const [counts, valueCards] = await Promise.all([
+      fetchRarityCounts(resolved.set.code),
+      fetchTopCardsByValue(resolved.set.code),
+    ]);
+    const { tiers, perCardByRarity, specials } = computePullData(packContents, resolved.slug, counts);
+    const possiblePulls = buildPossiblePulls(valueCards, perCardByRarity, specials);
+
+    res.json({
+      setCode: resolved.set.code,
+      setName: resolved.set.name,
+      pullProbabilities: tiers,
+      possiblePulls,
+    });
+  } catch (err: any) {
+    res.status(500).json({ error: err?.message ?? "Sync failed" });
+  }
+});
+
 export default router;
