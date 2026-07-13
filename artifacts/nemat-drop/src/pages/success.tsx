@@ -8,7 +8,10 @@ export default function SuccessPage() {
         </a>
         <div className="flex items-center gap-3">
           <img src="/logo-mark.svg" alt="Tommy Top Decker" className="w-10 h-auto block" />
-          <span className="text-[13px] font-bold tracking-[0.16em] uppercase text-[#f4f0e8]">TommyTopDecker</span>
+          <div className="flex flex-col">
+            <span className="text-[13px] font-bold tracking-[0.16em] uppercase text-[#f4f0e8] leading-none">TommyTopDecker</span>
+            <span className="text-[8px] font-bold tracking-[0.3em] uppercase text-[#b03a3a] leading-none mt-[3px]">Trading Cards</span>
+          </div>
         </div>
         <div className="w-12" />
       </div>
