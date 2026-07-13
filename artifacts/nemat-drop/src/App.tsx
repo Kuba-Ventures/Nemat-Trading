@@ -14,7 +14,7 @@ function HomePage() {
           <img
             src="/logo.png"
             alt="Tommy Top Decker"
-            className="h-12 md:h-16 w-auto object-contain"
+            className="h-12 md:h-16 w-auto object-contain rounded-lg"
           />
         </div>
         <div className="w-12 md:w-32 flex justify-end">

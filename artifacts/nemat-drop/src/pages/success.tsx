@@ -7,7 +7,7 @@ export default function SuccessPage() {
           <span>←</span><span>Back</span>
         </a>
         <div className="flex items-center">
-          <img src="/logo.png" alt="Tommy Top Decker" className="h-8 md:h-10 w-auto object-contain" />
+          <img src="/logo.png" alt="Tommy Top Decker" className="h-8 md:h-10 w-auto object-contain rounded-lg" />
         </div>
         <div className="w-12" />
       </div>
