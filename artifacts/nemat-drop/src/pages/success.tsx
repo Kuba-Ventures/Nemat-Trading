@@ -6,8 +6,9 @@ export default function SuccessPage() {
         <a href="/" className="flex items-center gap-2 text-xs text-gray-500 hover:text-white transition-colors">
           <span>←</span><span>Back</span>
         </a>
-        <div className="flex items-center">
-          <img src="/logo.png" alt="Tommy Top Decker" className="h-8 md:h-10 w-auto object-contain rounded-lg" />
+        <div className="flex items-center gap-3">
+          <img src="/logo-mark.svg" alt="Tommy Top Decker" className="w-10 h-auto block" />
+          <span className="text-[13px] font-bold tracking-[0.16em] uppercase text-[#f4f0e8]">TommyTopDecker</span>
         </div>
         <div className="w-12" />
       </div>
