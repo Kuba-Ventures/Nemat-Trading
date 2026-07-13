@@ -12,9 +12,9 @@ function HomePage() {
         <div className="w-12 md:w-32" />
         <div className="flex items-center min-w-0">
           <img
-            src="/logo.png"
+            src="/logo-mark.svg"
             alt="Tommy Top Decker"
-            className="h-12 md:h-16 w-auto object-contain rounded-lg"
+            className="h-36 md:h-48 w-auto object-contain"
           />
         </div>
         <div className="w-12 md:w-32 flex justify-end">

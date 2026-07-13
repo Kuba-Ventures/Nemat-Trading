@@ -101,7 +101,7 @@ export default function CheckoutPage() {
             <span>←</span><span>Back</span>
           </a>
           <div className="flex items-center">
-            <img src="/logo.png" alt="Tommy Top Decker" className="h-8 md:h-10 w-auto object-contain rounded-lg" />
+            <img src="/logo-mark.svg" alt="Tommy Top Decker" className="h-24 md:h-[7.5rem] w-auto object-contain" />
           </div>
           <div className="w-12" />{/* spacer to centre logo */}
         </div>
