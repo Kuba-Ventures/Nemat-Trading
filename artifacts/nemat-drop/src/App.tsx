@@ -6,6 +6,7 @@ import AdminPage from "@/pages/admin";
 import AccountPage from "@/pages/account";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
+import SupportPage from "@/pages/support";
 
 function HomePage() {
   return (
@@ -50,6 +51,7 @@ export default function App() {
   if (path === "/success") return <SuccessPage />;
   if (path === "/privacy") return <PrivacyPage />;
   if (path === "/terms") return <TermsPage />;
+  if (path === "/support") return <SupportPage />;
 
   return <HomePage />;
 }
