@@ -4,6 +4,8 @@ import CheckoutPage from "@/pages/checkout";
 import SuccessPage from "@/pages/success";
 import AdminPage from "@/pages/admin";
 import AccountPage from "@/pages/account";
+import PrivacyPage from "@/pages/privacy";
+import TermsPage from "@/pages/terms";
 
 function HomePage() {
   return (
@@ -46,6 +48,8 @@ export default function App() {
   if (path === "/account") return <AccountPage />;
   if (path === "/checkout") return <CheckoutPage />;
   if (path === "/success") return <SuccessPage />;
+  if (path === "/privacy") return <PrivacyPage />;
+  if (path === "/terms") return <TermsPage />;
 
   return <HomePage />;
 }
