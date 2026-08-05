@@ -7,6 +7,8 @@ import AccountPage from "@/pages/account";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import SupportPage from "@/pages/support";
+import PastDropsPage from "@/pages/past-drops";
+import HowItWorksPage from "@/pages/how-it-works";
 
 const NAV_LINKS = [
   { href: "/past-drops", label: "Past Drops" },
@@ -75,6 +77,8 @@ export default function App() {
   if (path === "/privacy") return <PrivacyPage />;
   if (path === "/terms") return <TermsPage />;
   if (path === "/support") return <SupportPage />;
+  if (path === "/past-drops") return <PastDropsPage />;
+  if (path === "/how-it-works") return <HowItWorksPage />;
 
   return <HomePage path={path} />;
 }
