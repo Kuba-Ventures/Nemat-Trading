@@ -5,6 +5,11 @@ interface CountdownTimerProps {
   targetIso: string;
   label?: string;
   size?: "sm" | "lg";
+  /**
+   * "stacked" renders the hero treatment with HRS/MIN/SEC captions.
+   * "inline" renders a single compact HH:MM:SS line for tight rows like the purchase bar.
+   */
+  variant?: "stacked" | "inline";
 }
 
 function getTimeLeft(targetIso: string) {
@@ -19,13 +24,30 @@ function pad(n: number) {
   return String(n).padStart(2, "0");
 }
 
-export default function CountdownTimer({ targetIso, label, size = "lg" }: CountdownTimerProps) {
+export default function CountdownTimer({
+  targetIso,
+  label,
+  size = "lg",
+  variant = "stacked",
+}: CountdownTimerProps) {
   const [time, setTime] = useState(() => getTimeLeft(targetIso));
 
   useEffect(() => {
     const id = setInterval(() => setTime(getTimeLeft(targetIso)), 1000);
     return () => clearInterval(id);
   }, [targetIso]);
+
+  if (variant === "inline") {
+    return (
+      <span className="font-mono font-bold text-cyan-400 tabular-nums text-[15px] leading-none whitespace-nowrap">
+        {pad(time.h)}
+        <span className="text-cyan-400/60">:</span>
+        {pad(time.m)}
+        <span className="text-cyan-400/60">:</span>
+        {pad(time.s)}
+      </span>
+    );
+  }
 
   const digitClass =
     size === "lg"
