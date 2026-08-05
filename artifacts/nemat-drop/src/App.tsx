@@ -8,10 +8,15 @@ import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import SupportPage from "@/pages/support";
 
-function HomePage() {
+const NAV_LINKS = [
+  { href: "/past-drops", label: "Past Drops" },
+  { href: "/how-it-works", label: "How It Works" },
+] as const;
+
+function HomePage({ path }: { path: string }) {
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col bg-black">
-      <header className="w-full flex items-center justify-between h-[72px] px-[26px] border-b border-white/[0.06] shrink-0 bg-black relative z-20">
+      <header className="w-full flex items-center justify-between gap-6 h-[72px] px-[26px] border-b border-white/[0.06] shrink-0 bg-black relative z-20">
         <div className="flex items-center gap-3 min-w-0">
           <img
             src="/logo-mark.svg"
@@ -27,12 +32,30 @@ function HomePage() {
             </span>
           </div>
         </div>
-        <a
-          href="/account"
-          className="px-2 py-1 md:px-4 md:py-2 bg-white text-black text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] rounded hover:bg-gray-200 transition-colors"
-        >
-          Account
-        </a>
+        <div className="flex items-center gap-6 shrink-0">
+          <nav className="hidden md:flex items-center gap-6" aria-label="Main">
+            {NAV_LINKS.map(({ href, label }) => (
+              <a
+                key={href}
+                href={href}
+                aria-current={path === href ? "page" : undefined}
+                className={`text-[10px] font-bold uppercase tracking-[0.16em] whitespace-nowrap pb-[5px] border-b transition-colors focus-visible:outline-1 focus-visible:outline-cyan-400 focus-visible:outline-offset-4 ${
+                  path === href
+                    ? "text-cyan-400 border-cyan-400"
+                    : "text-gray-500 border-transparent hover:text-cyan-400 hover:border-cyan-400"
+                }`}
+              >
+                {label}
+              </a>
+            ))}
+          </nav>
+          <a
+            href="/account"
+            className="px-2 py-1 md:px-4 md:py-2 bg-white text-black text-[10px] md:text-[11px] font-bold uppercase tracking-[0.15em] rounded hover:bg-gray-200 transition-colors whitespace-nowrap"
+          >
+            Account
+          </a>
+        </div>
       </header>
       <div className="flex flex-col md:flex-row md:flex-1 md:min-h-0">
         <LeftShowcasePanel />
@@ -53,5 +76,5 @@ export default function App() {
   if (path === "/terms") return <TermsPage />;
   if (path === "/support") return <SupportPage />;
 
-  return <HomePage />;
+  return <HomePage path={path} />;
 }
