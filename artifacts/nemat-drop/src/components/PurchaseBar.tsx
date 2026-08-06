@@ -56,27 +56,30 @@ export default function PurchaseBar() {
           </div>
         )}
 
-        {/* Buy group — total sits next to the controls as one unit, pushed right.
-            Tighter gaps on mobile (product + countdown are hidden there) so the
-            total, quantity, and ACQUIRE all fit without clipping. */}
-        <div className="flex items-center shrink-0 gap-1.5 lg:gap-4 py-3 pl-0 lg:pl-4 ml-auto">
-          <div className="flex flex-col items-end">
-            <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
-              Total
-            </span>
-            <span className="mt-[3px] whitespace-nowrap">
-              <span className="text-[15px] font-bold text-white tabular-nums">${total}</span>
-              {savingsPercent && (
-                <span className="ml-2 hidden xl:inline text-[11px] font-medium text-green-400 tabular-nums">
-                  &minus;{savingsPercent}%
-                </span>
-              )}
-            </span>
+        {/* Buy group — two rows on mobile (total + quantity, then a full-width
+            ACQUIRE), a single inline right-aligned row from lg up. The inner
+            wrapper uses lg:contents so on desktop the total and quantity rejoin
+            the same flex row as ACQUIRE. */}
+        <div className="flex flex-col lg:flex-row lg:items-center shrink-0 w-full lg:w-auto gap-2.5 lg:gap-4 py-3 pl-0 lg:pl-4 ml-auto">
+          <div className="flex items-center justify-between w-full gap-3 lg:contents">
+            <div className="flex flex-col items-start lg:items-end">
+              <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
+                Total
+              </span>
+              <span className="mt-[3px] whitespace-nowrap">
+                <span className="text-[15px] font-bold text-white tabular-nums">${total}</span>
+                {savingsPercent && (
+                  <span className="ml-2 hidden xl:inline text-[11px] font-medium text-green-400 tabular-nums">
+                    &minus;{savingsPercent}%
+                  </span>
+                )}
+              </span>
+            </div>
+            <QuantitySelector quantity={quantity} onChange={setQuantity} />
           </div>
-          <QuantitySelector quantity={quantity} onChange={setQuantity} />
           <button
             onClick={handleAcquire}
-            className="flex-shrink-0 px-3 lg:px-8 py-3 bg-cyan-400 text-black text-xs font-bold uppercase tracking-[0.2em] lg:tracking-[0.25em] rounded hover:bg-cyan-300 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)] active:bg-cyan-500 transition-all duration-200"
+            className="w-full lg:w-auto flex-shrink-0 px-3 lg:px-8 py-3 bg-cyan-400 text-black text-xs font-bold uppercase tracking-[0.2em] lg:tracking-[0.25em] rounded hover:bg-cyan-300 hover:shadow-[0_0_20px_rgba(34,211,238,0.25)] active:bg-cyan-500 transition-all duration-200"
             aria-label="Acquire product"
           >
             Acquire
