@@ -33,11 +33,12 @@ function requireAdmin(req: any, res: any, next: any) {
 
 // Admin: create product
 router.post("/admin/products", requireAdmin, async (req, res) => {
-  const { title, subtitle, price, imageUrl, stock, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
+  const { title, shortTitle, subtitle, price, imageUrl, stock, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
   const [product] = await db
     .insert(productsTable)
     .values({
       title,
+      shortTitle: shortTitle ?? "",
       subtitle: subtitle ?? "",
       price,
       imageUrl: imageUrl ?? "",
@@ -61,9 +62,10 @@ router.post("/admin/products", requireAdmin, async (req, res) => {
 // Admin: update product
 router.patch("/admin/products/:id", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const { title, subtitle, price, imageUrl, stock, active, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
+  const { title, shortTitle, subtitle, price, imageUrl, stock, active, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
   const updates: Record<string, any> = {};
   if (title !== undefined) updates.title = title;
+  if (shortTitle !== undefined) updates.shortTitle = shortTitle;
   if (subtitle !== undefined) updates.subtitle = subtitle;
   if (price !== undefined) updates.price = price;
   if (imageUrl !== undefined) updates.imageUrl = imageUrl;

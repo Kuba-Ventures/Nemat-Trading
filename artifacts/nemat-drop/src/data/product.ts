@@ -9,6 +9,7 @@ export const product = {
   // ── Product ────────────────────────────────────────────────────────────────
   imageUrl: "/product.png",
   title: "Teenage Mutant Ninja Turtles",
+  shortTitle: "TMNT", // compact label for tight UI (e.g. purchase bar); falls back to title when empty
   subtitle: "Collector Booster Pack",
   status: "FLASH DROP // ACTIVE",
 
