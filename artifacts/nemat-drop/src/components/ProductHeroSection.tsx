@@ -21,13 +21,13 @@ function DealCountdown({ expiresAt }: { expiresAt: string }) {
   }, [expiresAt]);
 
   if (time.done) return (
-    <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 inline-flex items-center mb-8">
+    <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto items-center justify-center mb-8">
       <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500">Deal Expired</span>
     </div>
   );
 
   return (
-    <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 inline-flex flex-col items-center mb-8">
+    <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto flex-col items-center justify-center mb-8">
       <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 mb-3">Deal Expires In</span>
       <div className="flex items-end gap-1">
         {[{ v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }, { v: time.s, l: "SEC" }].map((unit, i) => (
@@ -98,11 +98,7 @@ export default function ProductHeroSection() {
   return (
     <section className="pb-10">
       {/* The status pill doubles as a discreet admin entry (also reachable at /admin). */}
-      <a href="/admin" aria-label="Admin" className="flex items-center gap-3 mb-6 w-fit group">
-        <span className="relative flex h-2 w-2">
-          <span className="animate-ping absolute inline-flex h-full w-full rounded-full bg-cyan-400 opacity-60"></span>
-          <span className="relative inline-flex rounded-full h-2 w-2 bg-cyan-400"></span>
-        </span>
+      <a href="/admin" aria-label="Admin" className="flex items-center mb-6 w-fit group">
         <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500 group-hover:text-gray-300 transition-colors">{staticProduct.status}</span>
       </a>
 
@@ -112,7 +108,7 @@ export default function ProductHeroSection() {
       {dbProduct?.expiresAt && <DealCountdown expiresAt={dbProduct.expiresAt} />}
 
       <div className="grid grid-cols-3 gap-0 border border-white/[0.06] rounded overflow-hidden mb-2">
-        <div className="flex flex-col items-center py-4 px-3 border-r border-white/[0.06]">
+        <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06]">
           {dbProduct?.tcgplayerUrl ? (
             <a href={dbProduct.tcgplayerUrl} target="_blank" rel="noopener noreferrer"
               className="text-[9px] uppercase tracking-[0.2em] text-gray-600 hover:text-cyan-600 transition-colors mb-1 underline underline-offset-2">
@@ -124,13 +120,13 @@ export default function ProductHeroSection() {
           <span className="text-base text-gray-500 line-through">${tcgBest.toFixed(2)}</span>
           {tcgPrice && <span className="text-[8px] text-cyan-600 mt-0.5">Live</span>}
         </div>
-        <div className="flex flex-col items-center py-4 px-3 border-r border-white/[0.06] bg-cyan-400/[0.05]">
+        <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06] bg-cyan-400/[0.05]">
           <span className="text-[9px] uppercase tracking-[0.2em] text-cyan-400 mb-1">Today's Drop</span>
           <span className="text-xl font-bold text-cyan-400">${nematPrice.toFixed(2)}</span>
         </div>
-        <div className="flex flex-col items-center py-4 px-3">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-gray-600 mb-1">You Save</span>
-          <span className="text-base font-semibold text-cyan-400">{savings.toFixed(2)}%</span>
+        <div className="flex flex-col items-center justify-center py-4 px-3">
+          <span className="text-[9px] uppercase tracking-[0.2em] text-green-400 mb-1">You Save</span>
+          <span className="text-base font-semibold text-green-400">{savings.toFixed(2)}%</span>
         </div>
       </div>
     </section>
