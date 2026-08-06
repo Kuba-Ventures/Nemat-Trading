@@ -114,19 +114,33 @@ export default function LeftShowcasePanel() {
       border-r border-white/[0.04]
     ">
       {/* Product image — fills space above bottom section, never overflows */}
-      <div className="h-72 md:min-h-0 md:flex-1 relative px-10 pt-8 pb-2 overflow-hidden">
-        {/* Glow */}
+      <div className="h-96 md:min-h-0 md:flex-1 relative px-6 pt-6 pb-2 overflow-hidden">
+        {/* Spotlight glow behind the product */}
         <div
           className="absolute inset-0 pointer-events-none"
-          style={{ background: "radial-gradient(circle at 50% 50%, rgba(34,211,238,0.12) 0%, transparent 70%)" }}
+          style={{ background: "radial-gradient(ellipse 70% 55% at 50% 45%, rgba(34,211,238,0.30) 0%, transparent 68%)" }}
         />
-        <div className="relative z-10 w-full h-full flex items-center justify-center">
+        <div className="relative z-10 w-full h-full flex flex-col items-center justify-center">
           {dbProduct?.imageUrl ? (
-            <img
-              src={dbProduct.imageUrl}
-              alt={dbProduct.title}
-              className="w-full h-full object-contain drop-shadow-[0_0_40px_rgba(34,211,238,0.4)]"
-            />
+            <>
+              <img
+                src={dbProduct.imageUrl}
+                alt={dbProduct.title}
+                className="w-full flex-1 min-h-0 object-contain drop-shadow-[0_0_60px_rgba(34,211,238,0.55)]"
+              />
+              {/* Floor reflection — fades out, decorative only */}
+              <img
+                src={dbProduct.imageUrl}
+                aria-hidden="true"
+                className="w-full h-16 object-contain object-top opacity-20"
+                style={{
+                  transform: "scaleY(-1)",
+                  filter: "blur(1px)",
+                  WebkitMaskImage: "linear-gradient(to bottom, black, transparent)",
+                  maskImage: "linear-gradient(to bottom, black, transparent)",
+                }}
+              />
+            </>
           ) : (
             <div className="w-48 h-64 rounded-lg bg-white/[0.04] animate-pulse" />
           )}
