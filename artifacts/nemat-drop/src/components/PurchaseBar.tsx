@@ -12,7 +12,12 @@ export default function PurchaseBar() {
   const productId = dbProduct?.id ?? 1;
   const total = (pricePerUnit * quantity).toFixed(2);
 
-  const title = dbProduct?.title ?? staticProduct.title;
+  // Compact label for this tight bar: the product's own short title when set,
+  // otherwise its full title (which truncates). Never borrow the static mock's
+  // short title for a live DB product.
+  const shortTitle = dbProduct
+    ? (dbProduct.shortTitle || dbProduct.title)
+    : (staticProduct.shortTitle || staticProduct.title);
   const subtitle = dbProduct?.subtitle ?? staticProduct.subtitle;
   const expiresAt = dbProduct?.expiresAt ?? staticProduct.dropExpiresAt;
 
@@ -31,17 +36,18 @@ export default function PurchaseBar() {
   return (
     <div className="sticky bottom-0 z-10 border-t border-cyan-400/40 bg-[#0d0d0d]/95 backdrop-blur-sm">
       <div className="flex items-stretch">
-        {/* Product — desktop only; on mobile the hero is already in view */}
-        <div className="hidden md:flex flex-col justify-center min-w-0 max-w-[240px] py-3 pr-4 border-r border-white/10">
-          <span className="text-[12.5px] text-white truncate leading-tight">{title}</span>
+        {/* Product — desktop only; on mobile the hero is already in view.
+            Uses the short title so it stays on one line and never crowds the total. */}
+        <div className="hidden md:flex flex-col justify-center min-w-0 max-w-[160px] py-3 pr-4 border-r border-white/10">
+          <span className="text-[12.5px] text-white truncate leading-tight">{shortTitle}</span>
           <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 mt-[3px] truncate">
             {subtitle}
           </span>
         </div>
 
-        {/* Countdown */}
+        {/* Countdown — hidden below lg so it never squeezes the buy group */}
         {expiresAt && (
-          <div className="hidden sm:flex flex-col justify-center items-center py-3 px-4 border-r border-white/10">
+          <div className="hidden lg:flex flex-col justify-center items-center py-3 px-4 border-r border-white/10">
             <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
               Expires in
             </span>
@@ -51,23 +57,23 @@ export default function PurchaseBar() {
           </div>
         )}
 
-        {/* Total */}
-        <div className="flex-1 min-w-0 flex flex-col justify-center items-end sm:items-center py-3 px-4">
-          <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
-            Total
-          </span>
-          <span className="mt-[3px] whitespace-nowrap">
-            <span className="text-[15px] font-bold text-white tabular-nums">${total}</span>
-            {savingsPercent && (
-              <span className="ml-2 text-[11px] font-medium text-green-400 tabular-nums">
-                &minus;{savingsPercent}%
-              </span>
-            )}
-          </span>
-        </div>
-
-        {/* Actions */}
-        <div className="flex items-center gap-3 py-3 pl-4">
+        {/* Buy group — total sits next to the controls as one unit, pushed right.
+            Tighter gaps on mobile (product + countdown are hidden there) so the
+            total, quantity, and ACQUIRE all fit without clipping. */}
+        <div className="flex items-center gap-2 sm:gap-4 py-3 pl-0 sm:pl-4 ml-auto">
+          <div className="flex flex-col items-end">
+            <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
+              Total
+            </span>
+            <span className="mt-[3px] whitespace-nowrap">
+              <span className="text-[15px] font-bold text-white tabular-nums">${total}</span>
+              {savingsPercent && (
+                <span className="ml-2 hidden sm:inline text-[11px] font-medium text-green-400 tabular-nums">
+                  &minus;{savingsPercent}%
+                </span>
+              )}
+            </span>
+          </div>
           <QuantitySelector quantity={quantity} onChange={setQuantity} />
           <button
             onClick={handleAcquire}

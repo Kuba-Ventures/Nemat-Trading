@@ -30,6 +30,7 @@ async function migrate() {
       expires_at TIMESTAMP,
       created_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS short_title TEXT NOT NULL DEFAULT '';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS expires_at TIMESTAMP;
     ALTER TABLE products ADD COLUMN IF NOT EXISTS scryfall_id TEXT DEFAULT '';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS discount_percent INTEGER DEFAULT 15;

@@ -10,6 +10,7 @@ type Spec = { label: string; value: string };
 type Product = {
   id: number;
   title: string;
+  shortTitle: string;
   subtitle: string;
   price: number;
   imageUrl: string;
@@ -257,7 +258,7 @@ type LookupResult = {
 };
 
 const emptyForm = {
-  title: "", subtitle: "", tcgplayerUrl: "", imageUrl: "",
+  title: "", shortTitle: "", subtitle: "", tcgplayerUrl: "", imageUrl: "",
   price: "", stock: "", expiresAt: "",
   scryfallId: "", discountPercent: "15",
 };
@@ -496,6 +497,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
 }) {
   const [form, setForm] = useState(product ? {
     title: product.title,
+    shortTitle: product.shortTitle ?? "",
     subtitle: product.subtitle,
     tcgplayerUrl: product.tcgplayerUrl ?? "",
     imageUrl: product.imageUrl,
@@ -660,6 +662,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     setError(null);
     const body = {
       title: form.title,
+      shortTitle: form.shortTitle,
       subtitle: form.subtitle,
       price: Math.round(parseFloat(form.price) * 100),
       imageUrl: form.imageUrl,
@@ -748,6 +751,12 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
                 <label className="text-[10px] uppercase tracking-[0.2em] text-gray-600 block mb-1.5">Title</label>
                 <input required value={form.title} onChange={(e) => setForm({ ...form, title: e.target.value })}
                   placeholder="Product name"
+                  className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-gray-600 block mb-1.5">Short title</label>
+                <input value={form.shortTitle} onChange={(e) => setForm({ ...form, shortTitle: e.target.value })}
+                  placeholder="e.g. TMNT — falls back to Title"
                   className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
               </div>
               <div>

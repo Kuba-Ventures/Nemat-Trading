@@ -6,6 +6,7 @@ const STORAGE_KEY = "ttd_active_product";
 export type DbProduct = {
   id: number;
   title: string;
+  shortTitle: string;
   subtitle: string;
   price: number;
   imageUrl: string;

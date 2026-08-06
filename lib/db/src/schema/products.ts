@@ -7,6 +7,7 @@ import { z } from "zod/v4";
 export const productsTable = pgTable("products", {
   id: serial("id").primaryKey(),
   title: text("title").notNull(),
+  shortTitle: text("short_title").notNull().default(""), // compact label for tight UI (e.g. purchase bar); falls back to title
   subtitle: text("subtitle").notNull().default(""),
   price: integer("price").notNull(), // in cents, e.g. 3200 = $32.00
   imageUrl: text("image_url").notNull().default(""),
