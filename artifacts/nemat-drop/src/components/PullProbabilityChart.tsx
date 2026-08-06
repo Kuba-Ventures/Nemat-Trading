@@ -28,7 +28,7 @@ export default function PullProbabilityChart() {
       : (product.pullProbabilities as Tier[]);
 
   return (
-    <section className="py-16 border-t border-white/5">
+    <section className="py-10 border-t border-white/5">
       <div className="flex items-center justify-between mb-2">
         <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500">Oracle's Insight</span>
         <div className="flex gap-1.5">

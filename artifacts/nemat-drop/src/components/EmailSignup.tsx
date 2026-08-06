@@ -30,7 +30,7 @@ export default function EmailSignup() {
   };
 
   return (
-    <section className="py-16 border-t border-white/5">
+    <section className="py-10 border-t border-white/5">
       <div className="max-w-xl">
         <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500 block mb-2">Alerts</span>
         <h2 className="text-2xl font-semibold text-white tracking-wide mb-2">Never Miss a Drop</h2>

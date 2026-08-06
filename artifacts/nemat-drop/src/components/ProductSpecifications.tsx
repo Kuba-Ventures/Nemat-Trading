@@ -18,7 +18,7 @@ export default function ProductSpecifications() {
   const copyright = staticProduct.copyright;
 
   return (
-    <section className="py-16 border-t border-white/5">
+    <section className="py-10 border-t border-white/5">
       <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500 block mb-2">Details</span>
       <h2 className="text-xl font-semibold text-white tracking-wide mb-10">Product Specifications</h2>
 

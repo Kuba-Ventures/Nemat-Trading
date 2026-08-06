@@ -39,7 +39,7 @@ export default function PossiblePullsGrid() {
       : product.possiblePulls;
 
   return (
-    <section className="py-16 border-t border-white/5">
+    <section className="py-10 border-t border-white/5">
       <span className="text-[10px] uppercase tracking-[0.3em] text-gray-500 block mb-2">Card Pulls</span>
       <h2 className="text-xl font-semibold text-white tracking-wide mb-2">Possible Pulls</h2>
       <p className="text-xs text-gray-600 mb-10">
