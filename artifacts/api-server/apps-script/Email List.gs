@@ -17,8 +17,6 @@
  *   all other tabs untouched.
  *
  * SECRET below MUST exactly match SHEETS_WEBHOOK_SECRET in the API server env.
- *
- * New-order emails live in SalesNotification.gs, hooked into doPost below.
  */
 
 const SECRET = 'PASTE_YOUR_SHEETS_WEBHOOK_SECRET_HERE';
@@ -65,21 +63,13 @@ function doPost(e) {
       }
     }
     sheet.appendRow(body.row);
-    // appendRow inherits font formatting from the neighboring row, which makes some
-    // rows come in bold. Force the new row to normal weight so data rows stay
-    // visually consistent.
-    sheet.getRange(sheet.getLastRow(), 1, 1, body.row.length).setFontWeight('normal');
-    // Notify the sales team. Deliberately AFTER the dedupe check above, so backfills
-    // and Stripe webhook retries don't re-notify on rows that were skipped. Its own
-    // try/catch because a mail failure (quota, transient) must not turn a successful
-    // append into an {ok:false} the API would log as a sheet-sync failure.
     if (body.tab === 'Orders') {
-      try {
-        sendOrderNotification(body.row);
-      } catch (mailErr) {
-        console.error('order notification failed: ' + mailErr);
-      }
+    try {
+      sendOrderNotification(body.row);
+    } catch (mailErr) {
+      console.error('order notification failed: ' + mailErr);
     }
+  }
     return json({ ok: true });
   } catch (err) {
     return json({ ok: false, error: String(err) });
