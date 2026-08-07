@@ -15,6 +15,12 @@ type ShippoRate = {
 
 const router = Router();
 
+// Hardcap on how many of a single item one order may contain. This is the
+// authoritative enforcement point: quantity reaches us as a client-controlled
+// value (URL param -> request body), so the frontend selector cap is only a
+// nudge and the real limit must be enforced here.
+const MAX_QUANTITY_PER_ORDER = 2;
+
 router.post("/checkout", async (req, res) => {
   console.log("[checkout] body:", JSON.stringify(req.body));
   const { productId, quantity, shippingRateId } = req.body as {
@@ -23,8 +29,12 @@ router.post("/checkout", async (req, res) => {
     shippingRateId?: string;
   };
 
-  if (!productId || !quantity || quantity < 1) {
-    res.status(400).json({ error: `productId and quantity are required (got productId=${productId}, quantity=${quantity})` });
+  if (!productId || !quantity || !Number.isInteger(quantity) || quantity < 1) {
+    res.status(400).json({ error: `productId and a whole-number quantity are required (got productId=${productId}, quantity=${quantity})` });
+    return;
+  }
+  if (quantity > MAX_QUANTITY_PER_ORDER) {
+    res.status(400).json({ error: `Limit ${MAX_QUANTITY_PER_ORDER} per item per order (got quantity=${quantity})` });
     return;
   }
   if (!shippingRateId || typeof shippingRateId !== "string") {

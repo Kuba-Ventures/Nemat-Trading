@@ -30,7 +30,7 @@ export default function CheckoutPage() {
     const parsedQty = Number(params.get("qty") ?? "1");
     const parsedPid = Number(params.get("pid") ?? "1");
     return {
-      qty: Number.isFinite(parsedQty) && parsedQty > 0 ? Math.min(parsedQty, 99) : 1,
+      qty: Number.isFinite(parsedQty) && parsedQty > 0 ? Math.min(parsedQty, 2) : 1,
       productId: Number.isFinite(parsedPid) && parsedPid > 0 ? parsedPid : 1,
     };
   }, []);

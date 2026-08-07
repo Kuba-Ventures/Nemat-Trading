@@ -75,7 +75,7 @@ export default function PurchaseBar() {
                 )}
               </span>
             </div>
-            <QuantitySelector quantity={quantity} onChange={setQuantity} />
+            <QuantitySelector quantity={quantity} onChange={setQuantity} max={2} />
           </div>
           <button
             onClick={handleAcquire}
