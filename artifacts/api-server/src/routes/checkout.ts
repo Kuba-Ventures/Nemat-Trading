@@ -23,10 +23,12 @@ const MAX_QUANTITY_PER_ORDER = 2;
 
 router.post("/checkout", async (req, res) => {
   console.log("[checkout] body:", JSON.stringify(req.body));
-  const { productId, quantity, shippingRateId } = req.body as {
+  const { productId, quantity, shippingRateId, fbp, fbc } = req.body as {
     productId: number;
     quantity: number;
     shippingRateId?: string;
+    fbp?: string;
+    fbc?: string;
   };
 
   if (!productId || !quantity || !Number.isInteger(quantity) || quantity < 1) {
@@ -79,6 +81,20 @@ router.post("/checkout", async (req, res) => {
   const stripe = new Stripe(stripeKey);
   const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
 
+  // Capture Meta match signals now so the Stripe webhook can fire a well-matched
+  // server-side Purchase later. These live on the browser's request to us: req.ip
+  // is the real client IP (trust proxy is on), and the _fbp / _fbc cookies are
+  // forwarded from the frontend in the request body. Stripe metadata values are
+  // strings capped at 500 chars, so slice defensively.
+  const clientIp = (req.ip ?? "").toString();
+  const clientUa = (req.headers["user-agent"] ?? "").toString().slice(0, 500);
+  const eventSourceUrl = (req.headers["referer"] ?? frontendUrl).toString().slice(0, 500);
+  const metaMetadata: Record<string, string> = { fb_src: eventSourceUrl };
+  if (fbp) metaMetadata.fbp = String(fbp).slice(0, 500);
+  if (fbc) metaMetadata.fbc = String(fbc).slice(0, 500);
+  if (clientIp) metaMetadata.client_ip = clientIp.slice(0, 100);
+  if (clientUa) metaMetadata.client_ua = clientUa;
+
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     automatic_tax: { enabled: true },
@@ -114,6 +130,7 @@ router.post("/checkout", async (req, res) => {
     ],
     metadata: {
       productId: String(productId),
+      ...metaMetadata,
     },
     success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${frontendUrl}/checkout?qty=${quantity}`,

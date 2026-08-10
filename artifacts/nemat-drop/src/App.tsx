@@ -1,5 +1,8 @@
+import { useEffect } from "react";
 import LeftShowcasePanel from "@/components/LeftShowcasePanel";
 import RightContentPanel from "@/components/RightContentPanel";
+import { product as staticProduct } from "@/data/product";
+import { trackViewContent } from "@/lib/metaPixel";
 import CheckoutPage from "@/pages/checkout";
 import SuccessPage from "@/pages/success";
 import AdminPage from "@/pages/admin";
@@ -16,6 +19,10 @@ const NAV_LINKS = [
 ] as const;
 
 function HomePage({ path }: { path: string }) {
+  useEffect(() => {
+    trackViewContent({ valueDollars: staticProduct.dropPrice, contentIds: [1] });
+  }, []);
+
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col bg-black">
       <header className="w-full flex items-center justify-between gap-6 h-[72px] px-[26px] border-b border-white/[0.06] shrink-0 bg-black relative z-20">

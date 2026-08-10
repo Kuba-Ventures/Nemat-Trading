@@ -3,6 +3,7 @@ import QuantitySelector from "./QuantitySelector";
 import CountdownTimer from "./CountdownTimer";
 import { product as staticProduct } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
+import { trackAddToCart } from "@/lib/metaPixel";
 
 export default function PurchaseBar() {
   const [quantity, setQuantity] = useState(1);
@@ -29,6 +30,11 @@ export default function PurchaseBar() {
     tcgPrice > pricePerUnit ? ((1 - pricePerUnit / tcgPrice) * 100).toFixed(2) : null;
 
   const handleAcquire = () => {
+    trackAddToCart({
+      valueDollars: Number(total),
+      contentIds: [productId],
+      numItems: quantity,
+    });
     window.location.href = `/checkout?qty=${quantity}&pid=${productId}`;
   };
 
