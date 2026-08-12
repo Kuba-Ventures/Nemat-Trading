@@ -122,4 +122,37 @@ router.post("/checkout", async (req, res) => {
   res.json({ url: session.url });
 });
 
+// Minimal, PII-free lookup used by the /success page to fire a Meta Purchase
+// with the real order value. Retrieving from Stripe (rather than our orders
+// table) avoids a race with the async webhook that records the order. Only
+// paid sessions return data, and only the total + currency are exposed, never
+// customer details.
+router.get("/checkout/session/:id", async (req, res) => {
+  const stripeKey = process.env.STRIPE_SECRET_KEY;
+  if (!stripeKey) {
+    res.status(500).json({ error: "Stripe not configured" });
+    return;
+  }
+  const { id } = req.params;
+  if (!id || !id.startsWith("cs_")) {
+    res.status(400).json({ error: "invalid session id" });
+    return;
+  }
+  try {
+    const stripe = new Stripe(stripeKey);
+    const session = await stripe.checkout.sessions.retrieve(id);
+    if (session.payment_status !== "paid") {
+      res.status(404).json({ error: "session not completed" });
+      return;
+    }
+    res.json({
+      value: session.amount_total != null ? session.amount_total / 100 : null,
+      currency: (session.currency ?? "usd").toUpperCase(),
+      orderId: session.id,
+    });
+  } catch {
+    res.status(404).json({ error: "session not found" });
+  }
+});
+
 export default router;
