@@ -1,4 +1,35 @@
+import { useEffect } from "react";
+
+const API_URL = import.meta.env.VITE_API_URL ?? "";
+
 export default function SuccessPage() {
+  // Push a `purchase` event into the dataLayer so GTM can fire the Meta
+  // Purchase event with the real order value. Fail-soft by design: if the
+  // lookup fails we still push (without value) so the conversion is counted.
+  // The Stripe session id doubles as the dedup key (eventID) shared with the
+  // Conversions API Gateway's server-side Purchase.
+  useEffect(() => {
+    const sessionId = new URLSearchParams(window.location.search).get("session_id");
+    if (!sessionId) return;
+
+    let cancelled = false;
+    const push = (extra: Record<string, unknown>) => {
+      if (cancelled) return;
+      const w = window as unknown as { dataLayer?: Record<string, unknown>[] };
+      w.dataLayer = w.dataLayer || [];
+      w.dataLayer.push({ event: "purchase", transaction_id: sessionId, currency: "USD", ...extra });
+    };
+
+    fetch(`${API_URL}/api/checkout/session/${encodeURIComponent(sessionId)}`)
+      .then((r) => (r.ok ? r.json() : null))
+      .then((d) => push(d && d.value != null ? { value: d.value, currency: d.currency ?? "USD" } : {}))
+      .catch(() => push({}));
+
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
   return (
     <main className="min-h-screen bg-black text-white px-6 py-10">
       {/* Header */}
