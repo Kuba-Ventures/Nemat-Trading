@@ -3,7 +3,6 @@ import Stripe from "stripe";
 import { db, ordersTable } from "@workspace/db";
 import { appendToSheet } from "../lib/sheets";
 import { orderRowFromSession } from "../lib/orderFromSession";
-import { sendPurchaseEvent } from "../lib/metaCapi";
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers["stripe-signature"];
@@ -104,35 +103,6 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     ], { dedupeCol: 2 });
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);
-
-    // Send the server-side Purchase to Meta's Conversions API. This is the
-    // reliable Purchase signal (the browser may never return to /success after
-    // Stripe's redirect). Fail-soft: no-op when Meta env vars are unset, and it
-    // never throws, so it cannot affect the order that was just recorded above.
-    const md = (full.metadata ?? {}) as Record<string, string>;
-    const nameTokens = (customerName || "").trim().split(/\s+/).filter(Boolean);
-    const firstName = nameTokens[0];
-    const lastName = nameTokens.length > 1 ? nameTokens.slice(1).join(" ") : undefined;
-    await sendPurchaseEvent({
-      eventId: full.id,
-      eventSourceUrl: md.fb_src || undefined,
-      valueCents: totalCents,
-      currency,
-      numItems: orderCount,
-      contentIds: md.productId ? [md.productId] : undefined,
-      email: customerEmail || undefined,
-      phone: customerPhone || undefined,
-      firstName,
-      lastName,
-      city: addr?.city ?? undefined,
-      state: addr?.state ?? undefined,
-      zip: addr?.postal_code ?? undefined,
-      country: addr?.country ?? undefined,
-      clientIp: md.client_ip || undefined,
-      clientUserAgent: md.client_ua || undefined,
-      fbp: md.fbp || undefined,
-      fbc: md.fbc || undefined,
-    });
   } catch (err) {
     console.error("[webhook] failed to process checkout.session.completed:", err);
     // Return 200 anyway — Stripe will retry on non-2xx, and the DB unique constraint
