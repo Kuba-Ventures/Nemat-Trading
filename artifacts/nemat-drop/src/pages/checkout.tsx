@@ -1,7 +1,6 @@
 import { useMemo, useState } from "react";
 import { product } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
-import { trackInitiateCheckout, getFbCookies } from "@/lib/metaPixel";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -76,17 +75,11 @@ export default function CheckoutPage() {
     }
     setLoading(true);
     setError(null);
-    trackInitiateCheckout({
-      valueDollars: totalCents / 100,
-      contentIds: [productId],
-      numItems: qty,
-    });
-    const { fbp, fbc } = getFbCookies();
     try {
       const res = await fetch(`${API_URL}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, quantity: qty, shippingRateId: selectedRateId, fbp, fbc }),
+        body: JSON.stringify({ productId, quantity: qty, shippingRateId: selectedRateId }),
       });
       const text = await res.text();
       let data: any;
