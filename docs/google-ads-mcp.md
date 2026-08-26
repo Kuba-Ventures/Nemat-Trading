@@ -67,17 +67,49 @@ Two things trip people up.
 **It must be a manager (MCC) account.** The API Center only exists inside a
 Google Ads manager account. If you sign in with a regular Ads account the page
 is simply not there, which reads like a broken link rather than a missing
-prerequisite. If you do not have one, create it first at
-<https://ads.google.com/home/tools/manager-accounts/>, then link your ads
-account to it. The token is issued at the manager level and covers the accounts
-under it.
+prerequisite.
+
+Check whether you already have one before creating anything: open the account
+picker (your avatar, top right of the Google Ads UI) and look for an account
+tagged **Manager**. Switch into that account first, then open the API Center. If
+there is no manager account, create one at
+<https://ads.google.com/home/tools/manager-accounts/>.
+
+An account marked "(Setup in progress)" in that list has not finished onboarding.
+If the API Center is missing on a manager account showing that tag, complete its
+setup (billing details are the usual gap) and try again.
 
 **Access levels matter:**
 
 - **Test access** reaches test accounts only. Fine for wiring things up, useless for real reporting.
 - **Basic access** is what you want. Apply in the API Center. Approval is manual and usually takes a few business days.
 
+A newly issued token starts on Test access. Against a real account it returns
+`DEVELOPER_TOKEN_NOT_APPROVED`, so complete the Basic access application while you
+are in the API Center rather than just copying the token and leaving.
+
 Apply early. It is the only step you cannot rush.
+
+### The token does not have to come from the account you want to read
+
+This is the piece that causes the most confusion. A developer token is an
+**application** credential: it identifies your API client, not the accounts it may
+touch. Which accounts you can actually read is decided by the Google account you
+sign in with during OAuth.
+
+So a token issued by manager account A can query account B, as long as the Google
+account you authorize with can already see B in its Google Ads account list. B does
+not need to sit under A.
+
+That also settles what to put in `GOOGLE_ADS_LOGIN_CUSTOMER_ID`:
+
+| Your access to the account | Value |
+| --- | --- |
+| You are a user on the account directly | Leave blank |
+| You reach it only through a manager account | The manager's customer ID, digits only |
+
+Setting it when it does not apply causes `USER_PERMISSION_DENIED`, so leave it blank
+if you are unsure and add it only if the error tells you to.
 
 ## What the server can and cannot do
 
