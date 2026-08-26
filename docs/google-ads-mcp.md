@@ -24,17 +24,18 @@ Everything else happens on your Mac. The script refuses to run in Cloud Shell.
 A locally installed MCP server is reachable only by Claude clients running on the
 same machine.
 
-| Surface | Covered by `setup-google-ads-mcp.sh`? |
-| --- | --- |
-| Claude Desktop app | Yes |
-| Claude Code CLI | Yes, at user scope, so every local project |
-| Cursor | Yes |
-| **claude.ai in a browser** | **No** |
-| **Claude mobile** | **No** |
-| Claude Code on the web | No |
+| Surface | `setup-google-ads-mcp.sh` (local) | `deploy-google-ads-mcp-cloudrun.sh` (hosted) |
+| --- | --- | --- |
+| Claude Desktop app | Yes | Yes |
+| Claude Code CLI | Yes, at user scope | Yes |
+| Cursor | Yes | Yes |
+| claude.ai in a browser | No | Yes |
+| Claude mobile | No | Yes |
+| Claude Code on the web | No | Yes |
 
-The browser and mobile cannot reach your machine. Covering them needs the Cloud
-Run deployment described at the bottom of this doc.
+The local install is faster to stand up and keeps everything on your machine. The
+Cloud Run deployment covers every surface, including the browser, at the cost of
+running a service. See [Covering the browser and mobile](#covering-the-browser-and-mobile).
 
 ## TL;DR
 
@@ -51,15 +52,27 @@ Budget about 10 minutes, assuming you already have a developer token.
 
 | Item | Where to get it | Time |
 | --- | --- | --- |
-| Google Ads **developer token** | Google Ads UI, Tools, API Center | Instant if you have one, otherwise a few days for approval |
+| Google Ads **developer token** | [ads.google.com/aw/apicenter](https://ads.google.com/aw/apicenter), manager account required | Instant if you have one, otherwise a few days for approval |
 | **Google Cloud project** with the Google Ads API enabled | [console.cloud.google.com](https://console.cloud.google.com) | ~2 min |
-| **gcloud CLI on your Mac** | [install guide](https://cloud.google.com/sdk/docs/install) | ~5 min |
+| **gcloud CLI on your Mac** | [macOS install guide](https://cloud.google.com/sdk/docs/install-sdk#mac), or `brew install --cask google-cloud-sdk` | ~5 min |
 | **Python 3.10+** and **pipx** | Script installs pipx if missing | ~1 min |
 | Manager (MCC) customer ID | Only if you reach the account through a manager account | Optional |
 
 ### On the developer token
 
-Access levels matter:
+Apply here: **<https://ads.google.com/aw/apicenter>**
+
+Two things trip people up.
+
+**It must be a manager (MCC) account.** The API Center only exists inside a
+Google Ads manager account. If you sign in with a regular Ads account the page
+is simply not there, which reads like a broken link rather than a missing
+prerequisite. If you do not have one, create it first at
+<https://ads.google.com/home/tools/manager-accounts/>, then link your ads
+account to it. The token is issued at the manager level and covers the accounts
+under it.
+
+**Access levels matter:**
 
 - **Test access** reaches test accounts only. Fine for wiring things up, useless for real reporting.
 - **Basic access** is what you want. Apply in the API Center. Approval is manual and usually takes a few business days.
@@ -131,23 +144,78 @@ gcloud auth application-default login \
 
 ## Covering the browser and mobile
 
-Everything above is local. To use Google Ads data from claude.ai in a browser or
-from Claude mobile, the server has to run somewhere both can reach, which means
-deploying it and adding it as a custom connector.
+Everything above is local, and a local server is unreachable from claude.ai in a
+browser or from Claude mobile. To cover those, the server has to run somewhere
+both can reach:
 
-Upstream ships a `Dockerfile` and documents a Cloud Run deployment behind FastMCP's
-OAuth proxy. The extra pieces are:
+```bash
+./scripts/deploy-google-ads-mcp-cloudrun.sh
+```
 
-- A Cloud Run service built from the upstream `Dockerfile`
-- An OAuth client, supplying `GOOGLE_ADS_MCP_OAUTH_CLIENT_ID` and `GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET`
-- `GOOGLE_ADS_MCP_BASE_URL`, `GOOGLE_ADS_MCP_JWT_SIGNING_KEY`, and a token store (`GOOGLE_ADS_MCP_STORAGE_TYPE=firestore`)
-- Adding the resulting HTTPS endpoint as a custom connector in claude.ai settings
+This deploys the same upstream server to Cloud Run behind FastMCP's OAuth proxy,
+then gives you an HTTPS endpoint to add as a custom connector in claude.ai. It
+covers every surface at once, local clients included, since they can point at the
+same endpoint instead of running their own copy.
 
-Roughly 1 to 2 hours, and it covers every surface at once including the local ones.
-Not yet built in this repo.
+Budget 1 to 2 hours the first time, mostly waiting on builds.
 
-Note on the Firestore backend: token entries are not auto-expired, so a long-running
-deployment needs periodic cleanup.
+### How it runs
+
+The OAuth redirect URI depends on the URL Cloud Run assigns, so the script works
+in two phases and is resumable.
+
+1. **Phase 1** enables the APIs, creates a Firestore database for the token store,
+   builds and pushes the image, deploys the service, and prints the URL.
+2. **You** create an OAuth client (the one step that cannot be scripted) with the
+   redirect URI it prints, which is `https://YOUR-SERVICE-URL/auth/callback`.
+   That path is FastMCP's default and upstream does not override it.
+3. **Phase 2** attaches the credentials and redeploys.
+
+Re-running the script after Phase 1 detects the existing service and resumes.
+You can also skip the prompt by exporting `GOOGLE_ADS_MCP_OAUTH_CLIENT_ID` and
+`GOOGLE_ADS_MCP_OAUTH_CLIENT_SECRET`.
+
+### Two things the script handles that the upstream README leaves to you
+
+- **The Firestore extra.** The stock `Dockerfile` runs `uv pip install --system .`,
+  which omits the Firestore token store. Setting
+  `GOOGLE_ADS_MCP_STORAGE_TYPE=firestore` against that image fails at startup. The
+  script patches the install to `.[firestore]` before building.
+- **JWT signing key reuse.** Redeploying with a fresh key silently invalidates
+  every session token already issued. The script reads the existing key off the
+  running service and reuses it.
+
+### Adding it to claude.ai
+
+1. Settings, Connectors, Add custom connector
+2. Paste the `/mcp` endpoint the script prints
+3. Sign in with the Google account that can see your Ads data
+
+### Security shape
+
+The service deploys with `--allow-unauthenticated`, which is required: claude.ai
+reaches the endpoint without a Google IAM identity. The endpoint is not open,
+though. Access control is the server's own OAuth proxy, which requires a Google
+login carrying the `adwords` scope before any tool call runs, and the tools are
+read-only regardless.
+
+The developer token and OAuth client secret are stored as Cloud Run environment
+variables, matching upstream's documented setup. Anyone with console access to the
+project can read them. Moving them to Secret Manager is a reasonable hardening
+step if the project gains other collaborators.
+
+### Housekeeping
+
+Firestore token entries are never expired upstream: the store filters expired
+entries on read but never deletes them, and `expires_at` is written as a string so
+a Firestore TTL policy cannot collect them either. Plan a periodic cleanup job for
+a long-lived deployment.
+
+Tear down:
+
+```bash
+gcloud run services delete google-ads-mcp --region=us-central1 --project=YOUR_PROJECT_ID
+```
 
 ## Removing it
 
