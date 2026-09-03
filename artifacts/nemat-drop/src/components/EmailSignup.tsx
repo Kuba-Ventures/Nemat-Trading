@@ -1,9 +1,11 @@
 
-import { useState } from "react";
+import { useId, useState } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
 export default function EmailSignup() {
+  const inputId = useId();
+  const errorId = useId();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -39,8 +41,8 @@ export default function EmailSignup() {
         </p>
 
         {submitted ? (
-          <div className="flex items-center gap-3 text-sm text-cyan-400">
-            <svg width="16" height="16" viewBox="0 0 16 16" fill="none">
+          <div role="status" className="flex items-center gap-3 text-sm text-cyan-400">
+            <svg width="16" height="16" viewBox="0 0 16 16" fill="none" aria-hidden="true" focusable="false">
               <path d="M3 8L6.5 11.5L13 4.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round"/>
             </svg>
             You're on the list. We'll reach out before the next drop.
@@ -48,13 +50,24 @@ export default function EmailSignup() {
         ) : (
           <div className="flex flex-col gap-2">
             <form onSubmit={handleSubmit} className="flex gap-0">
+              {/* The placeholder is a format hint, not a name: it is not exposed as
+                  an accessible name and it disappears on focus. */}
+              <label htmlFor={inputId} className="sr-only">
+                Email address for drop notifications
+              </label>
               <input
+                id={inputId}
+                name="email"
+                autoComplete="email"
+                data-signup="footer"
                 type="email"
                 value={email}
                 onChange={(e) => setEmail(e.target.value)}
                 placeholder="your@email.com"
                 required
                 disabled={loading}
+                aria-describedby={error ? errorId : undefined}
+                aria-invalid={error ? true : undefined}
                 className="flex-1 bg-white/[0.03] border border-white/10 border-r-0 rounded-l px-4 py-3 text-sm text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors disabled:opacity-50"
               />
               <button
@@ -65,7 +78,7 @@ export default function EmailSignup() {
                 {loading ? "..." : "Subscribe"}
               </button>
             </form>
-            {error && <p className="text-xs text-red-400">{error}</p>}
+            {error && <p id={errorId} role="alert" className="text-xs text-red-400">{error}</p>}
           </div>
         )}
       </div>

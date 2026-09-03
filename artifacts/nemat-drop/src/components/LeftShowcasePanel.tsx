@@ -1,9 +1,11 @@
-import { useRef, useState, useCallback } from "react";
+import { useId, useRef, useState, useCallback } from "react";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
 
 function MiniEmailSignup() {
+  const inputId = useId();
+  const errorId = useId();
   const [email, setEmail] = useState("");
   const [submitted, setSubmitted] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -36,17 +38,29 @@ function MiniEmailSignup() {
         Never Miss a Drop
       </p>
       {submitted ? (
-        <p className="text-[11px] text-cyan-400 text-center">You're on the list.</p>
+        <p role="status" className="text-[11px] text-cyan-400 text-center">You're on the list.</p>
       ) : (
         <form onSubmit={handleSubmit} className="flex gap-0">
+          {/* Same field as the footer signup, different placement. The label is
+              visually hidden because the heading above already carries the
+              meaning for sighted users. */}
+          <label htmlFor={inputId} className="sr-only">
+            Email address for drop notifications
+          </label>
           <input
             ref={inputRef}
+            id={inputId}
+            name="email"
+            autoComplete="email"
+            data-signup="showcase"
             type="email"
             value={email}
             onChange={(e) => setEmail(e.target.value)}
             placeholder="your@email.com"
             required
             disabled={loading}
+            aria-describedby={error ? errorId : undefined}
+            aria-invalid={error ? true : undefined}
             className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 border-r-0 rounded-l px-3 py-2 text-xs text-white placeholder-gray-600 focus:outline-none focus:border-cyan-500/40 transition-colors disabled:opacity-50"
           />
           <button
@@ -58,7 +72,7 @@ function MiniEmailSignup() {
           </button>
         </form>
       )}
-      {error && <p className="text-[11px] text-red-400 text-center mt-2">{error}</p>}
+      {error && <p id={errorId} role="alert" className="text-[11px] text-red-400 text-center mt-2">{error}</p>}
     </div>
   );
 }
@@ -91,6 +105,7 @@ export default function LeftShowcasePanel() {
               {/* Floor reflection — fades out, decorative only */}
               <img
                 src={dbProduct.imageUrl}
+                alt=""
                 aria-hidden="true"
                 className="w-full h-16 object-contain object-top opacity-20"
                 style={{
