@@ -1,5 +1,5 @@
 import { Router } from "express";
-import { pickBuyBoxPrice } from "../lib/tcg-pricing";
+import { buildListingsRequestBody, pickBuyBoxPrice } from "../lib/tcg-pricing";
 
 const router = Router();
 
@@ -82,10 +82,10 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
   };
 
   // TCGPlayer is fully client-side rendered — HTML scraping cannot get live prices.
-  // Strategy: use mp-search-api POST endpoint which returns real active listings
-  // sorted by price ascending, excluding presale listings.
+  // Strategy: use mp-search-api POST endpoint which returns the same active
+  // listings the product page lists, sorted by delivered cost (price + shipping).
   if (productId) {
-    // 1. Search API — fetch listings sorted by price, presale excluded.
+    // 1. Search API: fetch every live in-stock listing, sorted by delivered cost.
     //    Match TCGPlayer's headline "promoted listing" price: the buy box is won
     //    by the listing with the lowest all-in cost (item price + shipping), NOT the
     //    lowest item price. We pick that listing and report its item price — the exact
@@ -96,17 +96,7 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
         {
           method: "POST",
           headers: { ...mpHeaders, "Content-Type": "application/json" },
-          body: JSON.stringify({
-            filters: {
-              term: { sellerStatus: "Live", channelId: 0 },
-              range: { quantity: { gte: 1 } },
-              exclude: { channelExclusion: 0, sellerPrograms: ["Presale"] },
-            },
-            from: 0,
-            size: 30,
-            sort: { field: "price", order: "asc" },
-            context: { shippingCountry: "US", cart: {} },
-          }),
+          body: JSON.stringify(buildListingsRequestBody()),
         }
       );
       if (searchRes.ok) {
