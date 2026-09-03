@@ -9,8 +9,37 @@ import {
   fetchTopCardsByValue,
   buildPossiblePulls,
 } from "./scryfall";
+import { currentWindowEnd } from "../lib/drop-window";
 
 const router = Router();
+
+type ProductRow = typeof productsTable.$inferSelect;
+
+/**
+ * Advance any lapsed deadline to its current window and persist it, so a live
+ * drop restarts on its own instead of sitting on "Deal Expired" until someone
+ * edits it.
+ *
+ * Only active products roll: a deactivated drop keeps the deadline it had, so
+ * reactivating it does not silently rewrite its history. Rolling is idempotent
+ * and derived purely from the stored date, so concurrent requests compute the
+ * same target and cannot race to different values.
+ */
+async function rollLapsedWindows(products: ProductRow[]): Promise<ProductRow[]> {
+  const now = new Date();
+  return Promise.all(
+    products.map(async (product) => {
+      if (!product.active || !product.expiresAt) return product;
+      const rolled = currentWindowEnd(product.expiresAt, now);
+      if (rolled.getTime() === product.expiresAt.getTime()) return product;
+      await db
+        .update(productsTable)
+        .set({ expiresAt: rolled })
+        .where(eq(productsTable.id, product.id));
+      return { ...product, expiresAt: rolled };
+    }),
+  );
+}
 
 // Public: list active products
 router.get("/products", async (_req, res) => {
@@ -18,7 +47,7 @@ router.get("/products", async (_req, res) => {
     .select()
     .from(productsTable)
     .where(eq(productsTable.active, true));
-  res.json(products);
+  res.json(await rollLapsedWindows(products));
 });
 
 // Admin middleware
@@ -93,7 +122,9 @@ router.patch("/admin/products/:id", requireAdmin, async (req, res) => {
 // Admin: list all products (including inactive)
 router.get("/admin/products", requireAdmin, async (_req, res) => {
   const products = await db.select().from(productsTable);
-  res.json(products);
+  // Roll here too, so the admin list never disagrees with the storefront about
+  // when the live drop ends.
+  res.json(await rollLapsedWindows(products));
 });
 
 // Admin: delete product
