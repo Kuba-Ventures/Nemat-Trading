@@ -70,8 +70,64 @@ jobs:
       # agent never ran the command, so every PR parsed as "<none>" and fell into
       # the escalate branch. A broken reviewer and a genuine risk finding were
       # indistinguishable, and the Phase 2 soak measured nothing. See #81.
+      # The reviewer cannot run on a PR that edits this workflow: the action
+      # refuses with "Skipping action due to workflow validation", which is its
+      # guard against a PR rewriting the gate that judges it. CLAUDE.md already
+      # sends every CI change to a human, so short-circuit to that instead of
+      # running a review that will come back empty and look like a broken gate.
+      - name: Classify change
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          gh label create auto-merge-eligible --color 0E8A16 \
+            --description "Factory would auto-merge (Phase 2 soak: human merges)" 2>/dev/null || true
+          gh label create escalated --color B60205 \
+            --description "Factory routed this PR to a human" 2>/dev/null || true
+          gh label create review-inconclusive --color D93F0B \
+            --description "Factory review produced no verdict - the gate itself is broken" 2>/dev/null || true
+
+          # Labels are mutually exclusive; a re-review must not leave the old one on.
+          for l in auto-merge-eligible escalated review-inconclusive; do
+            gh pr edit "$PR" --remove-label "$l" 2>/dev/null || true
+          done
+
+          if gh pr diff "$PR" --name-only | grep -qE '^\.github/workflows/'; then
+            echo "ci_change=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_change=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Escalate workflow changes without review
+        if: steps.scope.outputs.ci_change == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          echo "PR touches .github/workflows/ - escalating without a review."
+          gh pr edit "$PR" --add-label escalated
+          gh pr comment "$PR" --body "**Escalated without an automated review.**
+
+          This PR changes \`.github/workflows/\`, and the review action refuses to run
+          on a PR that edits its own workflow. That guard is what stops a PR from
+          rewriting the gate that judges it.
+
+          CI configuration always goes to a human under the merge policy in
+          CLAUDE.md, so no verdict was needed. Review this one by hand."
+
+      # The verdict comes back as typed JSON via --json-schema, not as prose the
+      # workflow has to grep out of a comment. The previous version asked the agent
+      # to run `gh pr comment` and then parsed the comments for a VERDICT line; the
+      # agent never ran the command, so every PR parsed as "<none>" and fell into
+      # the escalate branch. A broken reviewer and a genuine risk finding were
+      # indistinguishable, and the Phase 2 soak measured nothing. See #81.
       - name: Factory review
         id: review
+        if: steps.scope.outputs.ci_change == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -103,22 +159,13 @@ jobs:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Post review and enforce verdict
+        if: steps.scope.outputs.ci_change == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
-
-          label() { gh label create "$1" --color "$2" --description "$3" 2>/dev/null || true; }
-          label auto-merge-eligible 0E8A16 "Factory would auto-merge (Phase 2 soak: human merges)"
-          label escalated           B60205 "Factory routed this PR to a human"
-          label review-inconclusive D93F0B "Factory review produced no verdict — the gate itself is broken"
-
-          # Labels are mutually exclusive; a re-review must not leave the old one on.
-          for l in auto-merge-eligible escalated review-inconclusive; do
-            gh pr edit "$PR" --remove-label "$l" 2>/dev/null || true
-          done
 
           inconclusive() {
             echo "::error::$1"
