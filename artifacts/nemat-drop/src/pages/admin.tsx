@@ -875,7 +875,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
             <input type="datetime-local" value={form.expiresAt}
               onChange={(e) => setForm({ ...form, expiresAt: e.target.value })}
               className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40 text-white [color-scheme:dark]" />
-            <p className="text-[10px] text-gray-600 mt-2">When set, a live countdown timer appears on the storefront.</p>
+            <p className="text-[10px] text-gray-600 mt-2">When set, a live countdown timer appears on the storefront. The deadline rolls forward 10 days each time it lapses, so a live drop restarts on its own. Clear the field to remove the countdown entirely.</p>
           </div>
         </section>
 

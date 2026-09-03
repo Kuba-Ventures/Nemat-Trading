@@ -1,23 +1,17 @@
-import { useEffect, useState } from "react";
 import { product as staticProduct } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
 import { useTcgPrice } from "@/hooks/useTcgPrice";
-
-function getTimeLeft(iso: string) {
-  const diff = Math.max(0, new Date(iso).getTime() - Date.now());
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  return { h, m, s, done: diff === 0 };
-}
-function pad(n: number) { return String(n).padStart(2, "0"); }
+import { useTimeLeft, pad } from "@/lib/countdown";
 
 function DealCountdown({ expiresAt }: { expiresAt: string }) {
-  const [time, setTime] = useState(() => getTimeLeft(expiresAt));
-  useEffect(() => {
-    const id = setInterval(() => setTime(getTimeLeft(expiresAt)), 1000);
-    return () => clearInterval(id);
-  }, [expiresAt]);
+  const time = useTimeLeft(expiresAt);
+
+  // Drops run a 10-day window, which does not fit an HH:MM:SS clock: it used to
+  // read "160" in the HRS slot. Past 24 hours the units shift up to days, and
+  // seconds come back for the final day, where they carry real urgency.
+  const units = time.isLong
+    ? [{ v: time.d, l: "DAYS" }, { v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }]
+    : [{ v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }, { v: time.s, l: "SEC" }];
 
   if (time.done) return (
     <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto items-center justify-center mb-8">
@@ -29,7 +23,7 @@ function DealCountdown({ expiresAt }: { expiresAt: string }) {
     <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto flex-col items-center justify-center mb-8">
       <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 mb-3">Deal Expires In</span>
       <div className="flex items-end gap-1">
-        {[{ v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }, { v: time.s, l: "SEC" }].map((unit, i) => (
+        {units.map((unit, i) => (
           <div key={unit.l} className="flex items-end">
             <div className="flex flex-col items-center">
               <span className="text-2xl md:text-3xl font-mono font-bold text-cyan-400 tracking-widest tabular-nums">{pad(unit.v)}</span>

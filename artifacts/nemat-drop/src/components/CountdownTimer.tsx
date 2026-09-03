@@ -1,5 +1,5 @@
 
-import { useEffect, useState } from "react";
+import { useTimeLeft, pad } from "@/lib/countdown";
 
 interface CountdownTimerProps {
   targetIso: string;
@@ -12,42 +12,39 @@ interface CountdownTimerProps {
   variant?: "stacked" | "inline";
 }
 
-function getTimeLeft(targetIso: string) {
-  const diff = Math.max(0, new Date(targetIso).getTime() - Date.now());
-  const h = Math.floor(diff / 3600000);
-  const m = Math.floor((diff % 3600000) / 60000);
-  const s = Math.floor((diff % 60000) / 1000);
-  return { h, m, s };
-}
-
-function pad(n: number) {
-  return String(n).padStart(2, "0");
-}
-
 export default function CountdownTimer({
   targetIso,
   label,
   size = "lg",
   variant = "stacked",
 }: CountdownTimerProps) {
-  const [time, setTime] = useState(() => getTimeLeft(targetIso));
-
-  useEffect(() => {
-    const id = setInterval(() => setTime(getTimeLeft(targetIso)), 1000);
-    return () => clearInterval(id);
-  }, [targetIso]);
+  const time = useTimeLeft(targetIso);
 
   if (variant === "inline") {
+    // Past 24 hours a clock face stops being readable in a row this tight, so
+    // the compact form switches to days and drops the seconds.
     return (
       <span className="font-mono font-bold text-cyan-400 tabular-nums text-[15px] leading-none whitespace-nowrap">
-        {pad(time.h)}
-        <span className="text-cyan-400/60">:</span>
-        {pad(time.m)}
-        <span className="text-cyan-400/60">:</span>
-        {pad(time.s)}
+        {time.isLong ? (
+          <>
+            {time.d}d {time.h}h {time.m}m
+          </>
+        ) : (
+          <>
+            {pad(time.h)}
+            <span className="text-cyan-400/60">:</span>
+            {pad(time.m)}
+            <span className="text-cyan-400/60">:</span>
+            {pad(time.s)}
+          </>
+        )}
       </span>
     );
   }
+
+  const units = time.isLong
+    ? [{ v: time.d, l: "DAYS" }, { v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }]
+    : [{ v: time.h, l: "HRS" }, { v: time.m, l: "MIN" }, { v: time.s, l: "SEC" }];
 
   const digitClass =
     size === "lg"
@@ -65,20 +62,15 @@ export default function CountdownTimer({
         <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 mb-2">{label}</span>
       )}
       <div className="flex items-end gap-0">
-        <div className="flex flex-col items-center">
-          <span className={digitClass}>{pad(time.h)}</span>
-          <span className={labelClass}>HRS</span>
-        </div>
-        <span className={sepClass + " mb-4"}>:</span>
-        <div className="flex flex-col items-center">
-          <span className={digitClass}>{pad(time.m)}</span>
-          <span className={labelClass}>MIN</span>
-        </div>
-        <span className={sepClass + " mb-4"}>:</span>
-        <div className="flex flex-col items-center">
-          <span className={digitClass}>{pad(time.s)}</span>
-          <span className={labelClass}>SEC</span>
-        </div>
+        {units.map((unit, i) => (
+          <div key={unit.l} className="flex items-end">
+            <div className="flex flex-col items-center">
+              <span className={digitClass}>{pad(unit.v)}</span>
+              <span className={labelClass}>{unit.l}</span>
+            </div>
+            {i < 2 && <span className={sepClass + " mb-4"}>:</span>}
+          </div>
+        ))}
       </div>
     </div>
   );
