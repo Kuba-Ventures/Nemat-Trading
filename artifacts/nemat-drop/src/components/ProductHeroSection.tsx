@@ -1,8 +1,7 @@
-import { useEffect, useState, useRef } from "react";
+import { useEffect, useState } from "react";
 import { product as staticProduct } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
-
-const API_URL = import.meta.env.VITE_API_URL ?? "";
+import { useTcgPrice } from "@/hooks/useTcgPrice";
 
 function getTimeLeft(iso: string) {
   const diff = Math.max(0, new Date(iso).getTime() - Date.now());
@@ -46,40 +45,7 @@ function DealCountdown({ expiresAt }: { expiresAt: string }) {
 
 export default function ProductHeroSection() {
   const dbProduct = useActiveProduct();
-  const [tcgPrice, setTcgPrice] = useState<number | null>(null);
-  const pollRef = useRef<ReturnType<typeof setInterval> | null>(null);
-  const setupDoneRef = useRef(false); // ensure we only set up the poll once
-
-  useEffect(() => {
-    if (!dbProduct || !API_URL || setupDoneRef.current) return;
-    setupDoneRef.current = true;
-
-    const tcgplayerUrl = dbProduct.tcgplayerUrl;
-    const tcgMarketPriceCents = dbProduct.tcgMarketPriceCents;
-
-    async function fetchPrice() {
-      // Primary: TCGPlayer live lowest listing
-      if (tcgplayerUrl) {
-        try {
-          const r = await fetch(`${API_URL}/api/tcgplayer/price`, {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({ url: tcgplayerUrl }),
-          });
-          const d = await r.json();
-          if (d.lowestPrice) { setTcgPrice(parseFloat(d.lowestPrice)); return; }
-        } catch {}
-      }
-      // Fallback: stored market price from last admin lookup
-      if (tcgMarketPriceCents) {
-        setTcgPrice(tcgMarketPriceCents / 100);
-      }
-    }
-
-    fetchPrice();
-    pollRef.current = setInterval(fetchPrice, 5 * 60 * 1000);
-    return () => { if (pollRef.current) clearInterval(pollRef.current); };
-  }, [dbProduct]);
+  const tcg = useTcgPrice();
 
   const title = dbProduct?.title ?? staticProduct.title;
   const subtitle = dbProduct?.subtitle ?? staticProduct.subtitle;
@@ -87,13 +53,18 @@ export default function ProductHeroSection() {
   // Nemat price is FIXED — always the stored DB price, never fluctuates with TCG
   const nematPrice = dbProduct ? dbProduct.price / 100 : staticProduct.dropPrice;
 
-  // TCG Best: live fetch first, fall back to static
-  const tcgBest = tcgPrice ?? staticProduct.tcgBestPrice;
+  // No TCG figure means no comparison: the strip collapses to the drop price
+  // rather than quoting a placeholder as if it were TCGPlayer's number.
+  const tcgBest = tcg.status === "ready" ? tcg.price : null;
 
-  // Savings calculated dynamically: how much cheaper are we vs current TCG market price
-  const savings = tcgBest > nematPrice
+  // Savings calculated dynamically: how much cheaper are we vs current TCG price
+  const savings = tcgBest !== null && tcgBest > nematPrice
     ? parseFloat(((1 - nematPrice / tcgBest) * 100).toFixed(2))
     : 0;
+
+  // Keep the cells (as skeletons) while the fetch is in flight, drop them for good
+  // once we know there is no number coming.
+  const showCompare = tcg.status !== "unavailable";
 
   return (
     <section className="pb-10">
@@ -107,27 +78,44 @@ export default function ProductHeroSection() {
 
       {dbProduct?.expiresAt && <DealCountdown expiresAt={dbProduct.expiresAt} />}
 
-      <div className="grid grid-cols-3 gap-0 border border-white/[0.06] rounded overflow-hidden mb-2">
-        <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06]">
-          {dbProduct?.tcgplayerUrl ? (
-            <a href={dbProduct.tcgplayerUrl} target="_blank" rel="noopener noreferrer"
-              className="text-[9px] uppercase tracking-[0.2em] text-gray-600 hover:text-cyan-600 transition-colors mb-1 underline underline-offset-2">
-              TCG Low ↗
-            </a>
-          ) : (
-            <span className="text-[9px] uppercase tracking-[0.2em] text-gray-600 mb-1">TCG Low</span>
-          )}
-          <span className="text-base text-gray-500 line-through">${tcgBest.toFixed(2)}</span>
-          {tcgPrice && <span className="text-[8px] text-cyan-600 mt-0.5">Live</span>}
-        </div>
-        <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06] bg-cyan-400/[0.05]">
+      {/* Comparison strip. With no TCG figure the whole comparison drops out and
+          the drop price gets the full width: better an honest single number than
+          a dash pretending to be TCGPlayer's price. */}
+      <div className={`grid ${showCompare ? "grid-cols-3" : "grid-cols-1"} gap-0 border border-white/[0.06] rounded overflow-hidden mb-2`}>
+        {showCompare && (
+          <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06]">
+            {dbProduct?.tcgplayerUrl ? (
+              <a href={dbProduct.tcgplayerUrl} target="_blank" rel="noopener noreferrer"
+                className="text-[9px] uppercase tracking-[0.2em] text-gray-600 hover:text-cyan-600 transition-colors mb-1 underline underline-offset-2">
+                TCG Low ↗
+              </a>
+            ) : (
+              <span className="text-[9px] uppercase tracking-[0.2em] text-gray-600 mb-1">TCG Low</span>
+            )}
+            {tcgBest === null ? (
+              <span role="status" aria-label="Loading TCGPlayer price"
+                className="h-4 w-16 rounded bg-white/10 animate-pulse" />
+            ) : (
+              <span className="text-base text-gray-500 line-through">${tcgBest.toFixed(2)}</span>
+            )}
+            {tcg.live && <span className="text-[8px] text-cyan-600 mt-0.5">Live</span>}
+          </div>
+        )}
+        <div className={`flex flex-col items-center justify-center py-4 px-3 bg-cyan-400/[0.05] ${showCompare ? "border-r border-white/[0.06]" : ""}`}>
           <span className="text-[9px] uppercase tracking-[0.2em] text-cyan-400 mb-1">Today's Drop</span>
           <span className="text-xl font-bold text-cyan-400">${nematPrice.toFixed(2)}</span>
         </div>
-        <div className="flex flex-col items-center justify-center py-4 px-3">
-          <span className="text-[9px] uppercase tracking-[0.2em] text-green-400 mb-1">You Save</span>
-          <span className="text-base font-semibold text-green-400">{savings.toFixed(2)}%</span>
-        </div>
+        {showCompare && (
+          <div className="flex flex-col items-center justify-center py-4 px-3">
+            <span className="text-[9px] uppercase tracking-[0.2em] text-green-400 mb-1">You Save</span>
+            {tcgBest === null ? (
+              <span role="status" aria-label="Calculating savings"
+                className="h-4 w-11 rounded bg-white/10 animate-pulse" />
+            ) : (
+              <span className="text-base font-semibold text-green-400">{savings.toFixed(2)}%</span>
+            )}
+          </div>
+        )}
       </div>
     </section>
   );

@@ -14,7 +14,6 @@ export const product = {
   status: "FLASH DROP // ACTIVE",
 
   // ── Pricing ────────────────────────────────────────────────────────────────
-  tcgBestPrice: 37.49,
   dropPrice: 32,
   savingsPercent: 15,
 

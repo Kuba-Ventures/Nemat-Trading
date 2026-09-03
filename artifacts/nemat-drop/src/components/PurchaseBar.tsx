@@ -3,10 +3,12 @@ import QuantitySelector from "./QuantitySelector";
 import CountdownTimer from "./CountdownTimer";
 import { product as staticProduct } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
+import { useTcgPrice } from "@/hooks/useTcgPrice";
 
 export default function PurchaseBar() {
   const [quantity, setQuantity] = useState(1);
   const dbProduct = useActiveProduct();
+  const tcg = useTcgPrice();
 
   const pricePerUnit = dbProduct ? dbProduct.price / 100 : staticProduct.dropPrice;
   const productId = dbProduct?.id ?? 1;
@@ -20,13 +22,16 @@ export default function PurchaseBar() {
     : (staticProduct.shortTitle || staticProduct.title);
   const expiresAt = dbProduct?.expiresAt ?? staticProduct.dropExpiresAt;
 
-  // Prefer the live TCG figure when the API has one; fall back to static mock.
-  const tcgPrice = dbProduct?.tcgMarketPriceCents
-    ? dbProduct.tcgMarketPriceCents / 100
-    : staticProduct.tcgBestPrice;
+  // Same shared TCG figure the hero strip shows. This bar used to read the stored
+  // snapshot (or the static mock) on its own, so the two could disagree on the same
+  // screen: the hero quoted the live $41.94 while this bar computed against $37.49
+  // and therefore showed no savings at all.
+  const tcgPrice = tcg.status === "ready" ? tcg.price : null;
 
   const savingsPercent =
-    tcgPrice > pricePerUnit ? ((1 - pricePerUnit / tcgPrice) * 100).toFixed(2) : null;
+    tcgPrice !== null && tcgPrice > pricePerUnit
+      ? ((1 - pricePerUnit / tcgPrice) * 100).toFixed(2)
+      : null;
 
   const handleAcquire = () => {
     window.location.href = `/checkout?qty=${quantity}&pid=${productId}`;
@@ -68,7 +73,10 @@ export default function PurchaseBar() {
               </span>
               <span className="mt-[3px] whitespace-nowrap">
                 <span className="text-[15px] font-bold text-white tabular-nums">${total}</span>
-                {savingsPercent && (
+                {tcg.status === "loading" ? (
+                  <span role="status" aria-label="Calculating savings"
+                    className="ml-2 hidden xl:inline-block align-middle h-3 w-9 rounded bg-white/10 animate-pulse" />
+                ) : savingsPercent && (
                   <span className="ml-2 hidden xl:inline text-[11px] font-medium text-green-400 tabular-nums">
                     &minus;{savingsPercent}%
                   </span>
