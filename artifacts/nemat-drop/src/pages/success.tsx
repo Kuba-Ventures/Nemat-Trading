@@ -41,7 +41,7 @@ export default function SuccessPage() {
           <img src="/logo-mark.svg" alt="Tommy Top Decker" className="w-10 h-auto block" />
           <div className="flex flex-col">
             <span className="text-[13px] font-bold tracking-[0.16em] uppercase text-[#f4f0e8] leading-none">TommyTopDecker</span>
-            <span className="text-[8px] font-bold tracking-[0.3em] uppercase text-[#b03a3a] leading-none mt-[3px]">Trading Cards</span>
+            <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-[#c85a5a] leading-none mt-[3px]">Trading Cards</span>
           </div>
         </div>
         <div className="w-12" />

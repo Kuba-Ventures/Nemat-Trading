@@ -29,7 +29,7 @@ function HomePage({ path }: { path: string }) {
             <span className="text-[13px] font-bold tracking-[0.16em] uppercase text-[#f4f0e8] leading-none">
               TommyTopDecker
             </span>
-            <span className="text-[8px] font-bold tracking-[0.3em] uppercase text-[#b03a3a] leading-none mt-[3px]">
+            <span className="text-[10px] font-bold tracking-[0.3em] uppercase text-[#c85a5a] leading-none mt-[3px]">
               Trading Cards
             </span>
           </div>

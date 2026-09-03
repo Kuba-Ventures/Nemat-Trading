@@ -64,7 +64,7 @@ export default function PurchaseBar() {
                 deadline on screen twice. */}
             {expiresAt && (
               <div className="flex md:hidden flex-col items-start shrink-0">
-                <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
+                <span className="text-[10px] uppercase tracking-[0.16em] text-gray-400 whitespace-nowrap">
                   Expires in
                 </span>
                 <span className="mt-[3px]">
@@ -73,7 +73,7 @@ export default function PurchaseBar() {
               </div>
             )}
             <div className="flex flex-col items-start lg:items-end">
-              <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
+              <span className="text-[10px] uppercase tracking-[0.16em] text-gray-400 whitespace-nowrap">
                 Total
               </span>
               <span className="mt-[3px] whitespace-nowrap">
