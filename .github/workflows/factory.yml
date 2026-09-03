@@ -4,8 +4,12 @@ name: factory
 #   factory-tests  — typecheck gate (builds the shared libs and typechecks every
 #                    artifact) plus any package-level test suites that exist
 #                    (`pnpm -r test`, run only where a `test` script is present)
-#   factory-review — runs the vendored pr-reviewer agent; auto-merges only on
-#                    APPROVE-LOWRISK, otherwise labels the PR `escalated` for a human.
+#   factory-review — runs the vendored pr-reviewer agent and takes its verdict as
+#                    typed JSON (--json-schema), never as prose parsed out of a
+#                    comment. APPROVE-LOWRISK labels `auto-merge-eligible`;
+#                    ESCALATE labels `escalated`; anything else means the gate
+#                    itself failed, which labels `review-inconclusive` and fails
+#                    the check rather than quietly looking like a policy call.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -60,7 +64,70 @@ jobs:
             exit 1
           fi
 
+      # The verdict comes back as typed JSON via --json-schema, not as prose the
+      # workflow has to grep out of a comment. The previous version asked the agent
+      # to run `gh pr comment` and then parsed the comments for a VERDICT line; the
+      # agent never ran the command, so every PR parsed as "<none>" and fell into
+      # the escalate branch. A broken reviewer and a genuine risk finding were
+      # indistinguishable, and the Phase 2 soak measured nothing. See #81.
+      # The reviewer cannot run on a PR that edits this workflow: the action
+      # refuses with "Skipping action due to workflow validation", which is its
+      # guard against a PR rewriting the gate that judges it. CLAUDE.md already
+      # sends every CI change to a human, so short-circuit to that instead of
+      # running a review that will come back empty and look like a broken gate.
+      - name: Classify change
+        id: scope
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+
+          gh label create auto-merge-eligible --color 0E8A16 \
+            --description "Factory would auto-merge (Phase 2 soak: human merges)" 2>/dev/null || true
+          gh label create escalated --color B60205 \
+            --description "Factory routed this PR to a human" 2>/dev/null || true
+          gh label create review-inconclusive --color D93F0B \
+            --description "Factory review produced no verdict - the gate itself is broken" 2>/dev/null || true
+
+          # Labels are mutually exclusive; a re-review must not leave the old one on.
+          for l in auto-merge-eligible escalated review-inconclusive; do
+            gh pr edit "$PR" --remove-label "$l" 2>/dev/null || true
+          done
+
+          if gh pr diff "$PR" --name-only | grep -qE '^\.github/workflows/'; then
+            echo "ci_change=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ci_change=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: Escalate workflow changes without review
+        if: steps.scope.outputs.ci_change == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR: ${{ github.event.pull_request.number }}
+        run: |
+          set -euo pipefail
+          echo "PR touches .github/workflows/ - escalating without a review."
+          gh pr edit "$PR" --add-label escalated
+          gh pr comment "$PR" --body "**Escalated without an automated review.**
+
+          This PR changes \`.github/workflows/\`, and the review action refuses to run
+          on a PR that edits its own workflow. That guard is what stops a PR from
+          rewriting the gate that judges it.
+
+          CI configuration always goes to a human under the merge policy in
+          CLAUDE.md, so no verdict was needed. Review this one by hand."
+
+      # The verdict comes back as typed JSON via --json-schema, not as prose the
+      # workflow has to grep out of a comment. The previous version asked the agent
+      # to run `gh pr comment` and then parsed the comments for a VERDICT line; the
+      # agent never ran the command, so every PR parsed as "<none>" and fell into
+      # the escalate branch. A broken reviewer and a genuine risk finding were
+      # indistinguishable, and the Phase 2 soak measured nothing. See #81.
       - name: Factory review
+        id: review
+        if: steps.scope.outputs.ci_change == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
@@ -72,45 +139,79 @@ jobs:
             (typecheck) has already PASSED for this PR — treat tests as green.
 
             Use the **pr-reviewer** subagent (defined in .claude/agents/pr-reviewer.md) to
-            review this PR against the merge policy in CLAUDE.md. Then post your review as a
-            comment on this PR using:
-              gh pr comment ${{ github.event.pull_request.number }} --body "<your review>"
-            The review's final line MUST be exactly one of:
-              VERDICT: APPROVE-LOWRISK
-              VERDICT: ESCALATE — <one concrete reason>
+            review this PR against the merge policy in CLAUDE.md.
+
+            Do NOT post a comment yourself. The workflow posts your review for you,
+            so that a review always reaches the PR even if a tool call fails.
+
+            Return:
+            - verdict: "APPROVE-LOWRISK" only if the change is inside the low-risk
+              surfaces in CLAUDE.md and every changed behaviour is covered by a
+              passing test. Otherwise "ESCALATE".
+            - reason: one concrete sentence. For ESCALATE, name the specific file or
+              rule that triggered it.
+            - review: the full review in markdown, for a human to read.
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Task"
             --max-turns 25
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVE-LOWRISK","ESCALATE"],"description":"The merge-policy verdict"},"reason":{"type":"string","description":"One concrete sentence justifying the verdict"},"review":{"type":"string","description":"Full review in markdown for a human reader"}},"required":["verdict","reason","review"]}'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
-      - name: Enforce verdict
+      - name: Post review and enforce verdict
+        if: steps.scope.outputs.ci_change == 'false'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
+          STRUCTURED: ${{ steps.review.outputs.structured_output }}
         run: |
           set -euo pipefail
-          # Pull the most recent VERDICT line from this PR's comments.
-          verdict=$(gh pr view "$PR" --json comments \
-            -q '.comments[].body' \
-            | grep -oE 'VERDICT: (APPROVE-LOWRISK|ESCALATE)' \
-            | tail -1 || true)
-          echo "Parsed verdict: '${verdict:-<none>}'"
 
-          if [ "$verdict" = "VERDICT: APPROVE-LOWRISK" ]; then
+          inconclusive() {
+            echo "::error::$1"
+            gh pr edit "$PR" --add-label review-inconclusive
+            gh pr comment "$PR" --body "**Factory review did not return a verdict.** $1
+
+          This is a failure of the review gate itself, not a judgement about this PR.
+          A human needs to review it directly, and the gate needs fixing before the
+          soak means anything. See #81."
+            exit 1
+          }
+
+          if [ -z "${STRUCTURED:-}" ]; then
+            inconclusive "The reviewer produced no structured output at all."
+          fi
+          if ! printf '%s' "$STRUCTURED" | jq -e . >/dev/null 2>&1; then
+            inconclusive "The reviewer's structured output was not valid JSON."
+          fi
+
+          verdict=$(printf '%s' "$STRUCTURED" | jq -r '.verdict // empty')
+          reason=$(printf '%s' "$STRUCTURED" | jq -r '.reason // empty')
+          review=$(printf '%s' "$STRUCTURED" | jq -r '.review // empty')
+
+          case "$verdict" in
+            APPROVE-LOWRISK|ESCALATE) ;;
+            *) inconclusive "Expected APPROVE-LOWRISK or ESCALATE, got '${verdict:-<empty>}'." ;;
+          esac
+
+          # The workflow posts the review, so it is on the PR whether or not the
+          # agent managed a tool call.
+          {
+            printf '%s\n\n---\n\n' "$review"
+            printf '**VERDICT: %s** — %s\n' "$verdict" "$reason"
+          } | gh pr comment "$PR" --body-file -
+
+          echo "Verdict: $verdict — $reason"
+
+          if [ "$verdict" = "APPROVE-LOWRISK" ]; then
             # PHASE 2 (soak): observe-only. Label what the factory WOULD auto-merge,
             # but leave the merge to a human so we can watch for escapes.
             echo "APPROVE-LOWRISK — Phase 2 soak: labeling, not merging."
-            gh label create auto-merge-eligible --color 0E8A16 \
-              --description "Factory would auto-merge (Phase 2 soak: human merges)" 2>/dev/null || true
             gh pr edit "$PR" --add-label auto-merge-eligible
-            # PHASE 3: after a clean two-week soak, replace the two gh-label lines
-            # above with the real action:
+            # PHASE 3: after a clean two-week soak, replace the label line above with:
             #   gh pr merge "$PR" --squash --auto
           else
-            echo "Escalating to a human."
-            gh label create escalated --color B60205 \
-              --description "Factory routed this PR to a human" 2>/dev/null || true
+            echo "ESCALATE — routing to a human."
             gh pr edit "$PR" --add-label escalated
-            # Leave the check green so a human can merge manually; do not auto-merge.
+            # Check stays green so a human can merge manually; do not auto-merge.
           fi
