@@ -15,19 +15,19 @@ function DealCountdown({ expiresAt }: { expiresAt: string }) {
 
   if (time.done) return (
     <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto items-center justify-center mb-8">
-      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500">Deal Expired</span>
+      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-400">Deal Expired</span>
     </div>
   );
 
   return (
     <div className="border border-white/[0.06] rounded bg-white/[0.02] px-6 py-4 flex w-fit mx-auto flex-col items-center justify-center mb-8">
-      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-500 mb-3">Deal Expires In</span>
+      <span className="text-[10px] uppercase tracking-[0.25em] text-gray-400 mb-3">Deal Expires In</span>
       <div className="flex items-end gap-1">
         {units.map((unit, i) => (
           <div key={unit.l} className="flex items-end">
             <div className="flex flex-col items-center">
               <span className="text-2xl md:text-3xl font-mono font-bold text-cyan-400 tracking-widest tabular-nums">{pad(unit.v)}</span>
-              <span className="text-[9px] uppercase tracking-[0.2em] text-gray-500 mt-0.5">{unit.l}</span>
+              <span className="text-[10px] uppercase tracking-[0.2em] text-gray-400 mt-0.5">{unit.l}</span>
             </div>
             {i < 2 && <span className="text-xl font-mono text-cyan-400/60 mx-0.5 mb-4">:</span>}
           </div>
@@ -80,28 +80,28 @@ export default function ProductHeroSection() {
           <div className="flex flex-col items-center justify-center py-4 px-3 border-r border-white/[0.06]">
             {dbProduct?.tcgplayerUrl ? (
               <a href={dbProduct.tcgplayerUrl} target="_blank" rel="noopener noreferrer"
-                className="text-[9px] uppercase tracking-[0.2em] text-gray-600 hover:text-cyan-600 transition-colors mb-1 underline underline-offset-2">
+                className="text-[11px] uppercase tracking-[0.2em] text-gray-400 hover:text-cyan-400 transition-colors mb-1 underline underline-offset-2">
                 TCG Low ↗
               </a>
             ) : (
-              <span className="text-[9px] uppercase tracking-[0.2em] text-gray-600 mb-1">TCG Low</span>
+              <span className="text-[11px] uppercase tracking-[0.2em] text-gray-400 mb-1">TCG Low</span>
             )}
             {tcgBest === null ? (
               <span role="status" aria-label="Loading TCGPlayer price"
                 className="h-4 w-16 rounded bg-white/10 animate-pulse" />
             ) : (
-              <span className="text-base text-gray-500 line-through">${tcgBest.toFixed(2)}</span>
+              <span className="text-base text-gray-400 line-through">${tcgBest.toFixed(2)}</span>
             )}
-            {tcg.live && <span className="text-[8px] text-cyan-600 mt-0.5">Live</span>}
+            {tcg.live && <span className="text-[10px] text-cyan-600 mt-0.5">Live</span>}
           </div>
         )}
         <div className={`flex flex-col items-center justify-center py-4 px-3 bg-cyan-400/[0.05] ${showCompare ? "border-r border-white/[0.06]" : ""}`}>
-          <span className="text-[9px] uppercase tracking-[0.2em] text-cyan-400 mb-1">Today's Drop</span>
+          <span className="text-[11px] uppercase tracking-[0.2em] text-cyan-400 mb-1">Today's Drop</span>
           <span className="text-xl font-bold text-cyan-400">${nematPrice.toFixed(2)}</span>
         </div>
         {showCompare && (
           <div className="flex flex-col items-center justify-center py-4 px-3">
-            <span className="text-[9px] uppercase tracking-[0.2em] text-green-400 mb-1">You Save</span>
+            <span className="text-[11px] uppercase tracking-[0.2em] text-green-400 mb-1">You Save</span>
             {tcgBest === null ? (
               <span role="status" aria-label="Calculating savings"
                 className="h-4 w-11 rounded bg-white/10 animate-pulse" />

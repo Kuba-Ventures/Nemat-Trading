@@ -54,7 +54,7 @@ export default function CountdownTimer({
   const sepClass =
     size === "lg" ? "text-3xl md:text-4xl font-mono text-cyan-400/60 mx-1" : "text-xl font-mono text-cyan-400/60 mx-0.5";
 
-  const labelClass = size === "lg" ? "text-[10px] uppercase tracking-[0.2em] text-gray-500 mt-1" : "text-[9px] uppercase tracking-[0.2em] text-gray-500 mt-0.5";
+  const labelClass = size === "lg" ? "text-[10px] uppercase tracking-[0.2em] text-gray-400 mt-1" : "text-[10px] uppercase tracking-[0.2em] text-gray-400 mt-0.5";
 
   return (
     <div className="flex flex-col items-center gap-1">
