@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { pickBuyBoxPrice, type TcgListing } from "./tcg-pricing";
+import { buildListingsRequestBody, pickBuyBoxPrice, type TcgListing } from "./tcg-pricing";
 
 // Real-shaped sample: the listings TCGPlayer returned for product 657851, sorted
 // by item price ascending (the order the search API gives us). The buy box on the
@@ -85,4 +85,40 @@ test("ignores zero, negative, and non-numeric prices", () => {
 test("returns null when there are no usable listings", () => {
   assert.equal(pickBuyBoxPrice([]), null);
   assert.equal(pickBuyBoxPrice([{ price: 0 }, { price: -1 }]), null);
+});
+
+// ─── Listings query ───────────────────────────────────────────────────────────
+
+test("the listings query does not exclude any sellerPrograms", () => {
+  // Regression: `exclude: { sellerPrograms: ["Presale"] }` looked like a presale
+  // filter but is a SELLER attribute, so it blacklisted every presale-enrolled
+  // store. On product 657851 it returned 11 of 26 live listings and hid the two
+  // cheapest delivered ones ($41.94 and $41.95 free shipping), so the site printed
+  // TCG LOW $39.00 against a real buy box of $41.94.
+  const exclude = buildListingsRequestBody().filters.exclude as Record<string, unknown>;
+  assert.equal("sellerPrograms" in exclude, false);
+});
+
+test("the listings query asks for live, in-stock listings by delivered cost", () => {
+  const body = buildListingsRequestBody();
+  assert.equal(body.filters.term.sellerStatus, "Live");
+  assert.equal(body.filters.range.quantity.gte, 1);
+  // Sorting by delivered cost means the buy-box winner is in the first page even
+  // when a product has more listings than `size`.
+  assert.equal(body.sort.field, "price+shipping");
+  assert.ok(body.size >= 50);
+});
+
+// Real listing data captured from product 657851 on 2026-09-03, when TCGPlayer's
+// buy box read "$41.94, Shipping: Included" across 26 listings.
+test("reproduces the live buy box for product 657851", () => {
+  const listings: TcgListing[] = [
+    { price: 41.94, shippingPrice: 0 }, // 41.94 delivered, WINS (buy box)
+    { price: 41.95, shippingPrice: 0 }, // 41.95
+    { price: 39.0, shippingPrice: 2.99 }, // 41.99, lowest item price, loses
+    { price: 42.99, shippingPrice: 0 }, // 42.99
+    { price: 39.0, shippingPrice: 4.99 }, // 43.99
+    { price: 42.0, shippingPrice: 5.99 }, // 47.99
+  ];
+  assert.equal(pickBuyBoxPrice(listings), "41.94");
 });

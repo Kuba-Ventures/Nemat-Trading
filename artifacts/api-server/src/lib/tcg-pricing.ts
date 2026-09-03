@@ -12,6 +12,31 @@
  * without any network calls — see tcg-pricing.test.ts.
  */
 
+/**
+ * Request body for TCGPlayer's mp-search-api listings endpoint.
+ *
+ * Kept here (and unit-tested) because the filters decide WHICH listings we get to
+ * rank, and getting them wrong silently prints a wrong price rather than failing.
+ * Notably there is NO `exclude.sellerPrograms` here: `sellerPrograms` is a SELLER
+ * attribute (the programs a store is enrolled in), not a per-listing "presale" flag,
+ * so excluding "Presale" blacklists every presale-enrolled store. On product 657851
+ * that dropped 15 of 26 live listings, including both free-shipping ones at $41.94
+ * and $41.95, and made us print $39.00 while TCGPlayer's buy box said $41.94.
+ */
+export function buildListingsRequestBody() {
+  return {
+    filters: {
+      term: { sellerStatus: "Live", channelId: 0 },
+      range: { quantity: { gte: 1 } },
+      exclude: { channelExclusion: 0 },
+    },
+    from: 0,
+    size: 50,
+    sort: { field: "price+shipping", order: "asc" },
+    context: { shippingCountry: "US", cart: {} },
+  };
+}
+
 /** A single active listing as returned by TCGPlayer's mp-search-api listings endpoint. */
 export interface TcgListing {
   price?: number | string;
