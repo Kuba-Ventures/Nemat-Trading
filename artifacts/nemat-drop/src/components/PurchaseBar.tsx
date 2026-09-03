@@ -20,7 +20,12 @@ export default function PurchaseBar() {
   const shortTitle = dbProduct
     ? (dbProduct.shortTitle || dbProduct.title)
     : (staticProduct.shortTitle || staticProduct.title);
-  const expiresAt = dbProduct?.expiresAt ?? staticProduct.dropExpiresAt;
+  // Real deadlines only. This used to fall back to the static mock's
+  // dropExpiresAt, which was survivable while the bar countdown was 2xl-only:
+  // now that it renders on every phone, that fallback would show a product with
+  // no expiry a fabricated four-hour deadline. The hero timer already renders
+  // nothing in that case, so match it.
+  const expiresAt = dbProduct?.expiresAt ?? null;
 
   // Same shared TCG figure the hero strip shows. This bar used to read the stored
   // snapshot (or the static mock) on its own, so the two could disagree on the same
@@ -48,25 +53,25 @@ export default function PurchaseBar() {
           <span className="text-[12.5px] text-white truncate leading-tight">{shortTitle}</span>
         </div>
 
-        {/* Countdown — only from 2xl up; it duplicates the hero timer, so it's the
-            first thing to drop when the side-by-side panel is tight */}
-        {expiresAt && (
-          <div className="hidden 2xl:flex flex-col justify-center items-center py-3 px-4 border-r border-white/10">
-            <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
-              Expires in
-            </span>
-            <span className="mt-[3px]">
-              <CountdownTimer targetIso={expiresAt} variant="inline" />
-            </span>
-          </div>
-        )}
-
         {/* Buy group — two rows on mobile (total + quantity, then a full-width
             ACQUIRE), a single inline right-aligned row from lg up. The inner
             wrapper uses lg:contents so on desktop the total and quantity rejoin
             the same flex row as ACQUIRE. */}
         <div className="flex flex-col lg:flex-row lg:items-center shrink-0 w-full lg:w-auto gap-2.5 lg:gap-4 py-3 pl-0 lg:pl-4 ml-auto">
           <div className="flex items-center justify-between w-full gap-3 lg:contents">
+            {/* Countdown — mobile only. From md up the panels sit side by side and
+                the hero timer is visible, so showing it here too would put the same
+                deadline on screen twice. */}
+            {expiresAt && (
+              <div className="flex md:hidden flex-col items-start shrink-0">
+                <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
+                  Expires in
+                </span>
+                <span className="mt-[3px]">
+                  <CountdownTimer targetIso={expiresAt} variant="inline" />
+                </span>
+              </div>
+            )}
             <div className="flex flex-col items-start lg:items-end">
               <span className="text-[8.5px] uppercase tracking-[0.16em] text-gray-500 whitespace-nowrap">
                 Total
