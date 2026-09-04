@@ -10,9 +10,11 @@ import SupportPage from "@/pages/support";
 import PastDropsPage from "@/pages/past-drops";
 import HowItWorksPage from "@/pages/how-it-works";
 
+// "How It Works" was removed from the header. The page and its route are kept,
+// so any existing link to /how-it-works still resolves rather than 404s; it just
+// is not advertised in the nav any more.
 const NAV_LINKS = [
   { href: "/past-drops", label: "Past Drops" },
-  { href: "/how-it-works", label: "How It Works" },
 ] as const;
 
 function HomePage({ path }: { path: string }) {
