@@ -55,9 +55,29 @@ function priceDisplay(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+function pad2(n: number) {
+  return String(n).padStart(2, "0");
+}
+
+/**
+ * Format a stored UTC instant as the local wall-clock string a datetime-local
+ * input expects.
+ *
+ * This used to return `toISOString().slice(0, 16)`, which is UTC wall-clock.
+ * The input renders that as if it were local, and on save `new Date(value)`
+ * parses a zone-less string as local, so every save pushed the deadline by the
+ * browser's UTC offset. It compounded: three saves from New York moved a
+ * deadline 12 hours later, and from Tokyo it moved backwards, which would end a
+ * drop early. It was invisible to anyone whose browser was already on UTC.
+ */
 function toDatetimeLocal(iso: string | null) {
   if (!iso) return "";
-  return new Date(iso).toISOString().slice(0, 16);
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return (
+    `${d.getFullYear()}-${pad2(d.getMonth() + 1)}-${pad2(d.getDate())}` +
+    `T${pad2(d.getHours())}:${pad2(d.getMinutes())}`
+  );
 }
 
 function StatusBadge({ product }: { product: Product }) {
