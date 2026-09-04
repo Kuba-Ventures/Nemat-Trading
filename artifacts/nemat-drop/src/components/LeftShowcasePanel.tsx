@@ -40,10 +40,16 @@ function MiniEmailSignup() {
       {submitted ? (
         <p role="status" className="text-[11px] text-cyan-400 text-center">You're on the list.</p>
       ) : (
-        <form onSubmit={handleSubmit} className="flex gap-0">
+        <form onSubmit={handleSubmit} className="relative flex gap-0">
           {/* Same field as the footer signup, different placement. The label is
               visually hidden because the heading above already carries the
-              meaning for sighted users. */}
+              meaning for sighted users.
+
+              relative anchors the sr-only label. Tailwind's sr-only is
+                  position:absolute, so with no positioned ancestor it resolves
+                  against the initial containing block, and its static position
+                  extends the document's scroll height. That let the whole page
+                  scroll past a layout meant to be locked to the viewport. */}
           <label htmlFor={inputId} className="sr-only">
             Email address for drop notifications
           </label>

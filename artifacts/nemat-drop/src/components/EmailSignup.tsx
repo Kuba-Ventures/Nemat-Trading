@@ -49,9 +49,15 @@ export default function EmailSignup() {
           </div>
         ) : (
           <div className="flex flex-col gap-2">
-            <form onSubmit={handleSubmit} className="flex gap-0">
+            <form onSubmit={handleSubmit} className="relative flex gap-0">
               {/* The placeholder is a format hint, not a name: it is not exposed as
-                  an accessible name and it disappears on focus. */}
+                  an accessible name and it disappears on focus.
+
+                  relative anchors the sr-only label. Tailwind's sr-only is
+                  position:absolute, so with no positioned ancestor it resolves
+                  against the initial containing block, and its static position
+                  extends the document's scroll height. That let the whole page
+                  scroll past a layout meant to be locked to the viewport. */}
               <label htmlFor={inputId} className="sr-only">
                 Email address for drop notifications
               </label>
