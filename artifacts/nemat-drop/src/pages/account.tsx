@@ -293,24 +293,22 @@ export default function AccountPage() {
               {mode !== "reset" && (
                 <div className="relative">
                   <input
-                    type={showPassword && mode === "signup" ? "text" : "password"}
+                    type={showPassword ? "text" : "password"}
                     required
                     minLength={6}
                     value={password}
                     onChange={(e) => setPassword(e.target.value)}
                     placeholder={mode === "signup" ? "Create a password (min 6 characters)" : "Password"}
                     autoComplete={mode === "signup" ? "new-password" : "current-password"}
-                    className={`${inputClass} w-full ${mode === "signup" ? "pr-16" : ""}`}
+                    className={`${inputClass} w-full pr-16`}
                   />
-                  {mode === "signup" && (
-                    <button
-                      type="button"
-                      onClick={() => setShowPassword((v) => !v)}
-                      className="absolute inset-y-0 right-3 my-auto h-min text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500 hover:text-cyan-400 transition-colors"
-                    >
-                      {showPassword ? "Hide" : "Show"}
-                    </button>
-                  )}
+                  <button
+                    type="button"
+                    onClick={() => setShowPassword((v) => !v)}
+                    className="absolute inset-y-0 right-3 my-auto h-min text-[10px] font-bold uppercase tracking-[0.15em] text-gray-500 hover:text-cyan-400 transition-colors"
+                  >
+                    {showPassword ? "Hide" : "Show"}
+                  </button>
                 </div>
               )}
               {mode === "signup" && (
