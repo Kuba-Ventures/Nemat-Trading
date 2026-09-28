@@ -3,6 +3,7 @@ import Stripe from "stripe";
 import { db, ordersTable } from "@workspace/db";
 import { appendToSheet } from "../lib/sheets";
 import { orderRowFromSession } from "../lib/orderFromSession";
+import { sendOrderEmail } from "../lib/orderEmail";
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers["stripe-signature"];
@@ -70,8 +71,47 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
         ? full.payment_intent
         : full.payment_intent?.id ?? "";
 
-    // Save to DB (idempotent: stripe_session_id is UNIQUE)
-    await db.insert(ordersTable).values(orderRowFromSession(full)).onConflictDoNothing();
+    // Save to DB (idempotent: stripe_session_id is UNIQUE). An empty `returning`
+    // means this session was already recorded, i.e. a Stripe retry.
+    let isNewOrder = true;
+    try {
+      const inserted = await db
+        .insert(ordersTable)
+        .values(orderRowFromSession(full))
+        .onConflictDoNothing()
+        .returning({ id: ordersTable.id });
+      isNewOrder = inserted.length > 0;
+    } catch (err) {
+      // Still alert sales: a paid order has to ship even if the DB write failed.
+      // Resend's idempotency key keeps a retry from emailing twice.
+      console.error("[webhook] order insert failed:", err);
+    }
+
+    // Email sales the packing list (never throws, skipped on retries).
+    const emailSent = isNewOrder
+      ? sendOrderEmail({
+          sessionId: full.id,
+          item: itemName,
+          quantity: orderCount,
+          subtotal: (subtotalCents / 100).toFixed(2),
+          shipping: (shippingCents / 100).toFixed(2),
+          tax: (taxCents / 100).toFixed(2),
+          taxRate,
+          total: (totalCents / 100).toFixed(2),
+          currency,
+          customerEmail,
+          customerName,
+          customerPhone,
+          shipName,
+          address1: addr?.line1 ?? "",
+          address2: addr?.line2 ?? "",
+          city: addr?.city ?? "",
+          state: addr?.state ?? "",
+          zip: addr?.postal_code ?? "",
+          country: addr?.country ?? "",
+          paymentIntentId,
+        })
+      : Promise.resolve();
 
     // Append to Google Sheet (non-blocking failure).
     // Orders columns:
@@ -101,6 +141,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       addr?.country ?? "",
       paymentIntentId,
     ], { dedupeCol: 2 });
+    await emailSent;
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);
   } catch (err) {
