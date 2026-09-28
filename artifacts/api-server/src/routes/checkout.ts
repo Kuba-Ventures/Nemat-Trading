@@ -122,11 +122,13 @@ router.post("/checkout", async (req, res) => {
   res.json({ url: session.url });
 });
 
-// Minimal, PII-free lookup used by the /success page to fire a Meta Purchase
-// with the real order value. Retrieving from Stripe (rather than our orders
-// table) avoids a race with the async webhook that records the order. Only
-// paid sessions return data, and only the total + currency are exposed, never
-// customer details.
+// Order lookup for the /success page: fires the Meta Purchase with the real
+// order value and renders the pack-specific confirmation. Retrieving from
+// Stripe (rather than our orders table) avoids a race with the async webhook
+// that records the order. Only paid sessions return data. The ship-to name and
+// address are included, the same as Stripe's own hosted confirmation: the
+// session id is an unguessable secret handed only to the buyer. Email, phone
+// and payment details are never exposed.
 router.get("/checkout/session/:id", async (req, res) => {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) {
@@ -140,15 +142,43 @@ router.get("/checkout/session/:id", async (req, res) => {
   }
   try {
     const stripe = new Stripe(stripeKey);
-    const session = await stripe.checkout.sessions.retrieve(id);
+    const session = await stripe.checkout.sessions.retrieve(id, { expand: ["line_items"] });
     if (session.payment_status !== "paid") {
       res.status(404).json({ error: "session not completed" });
       return;
     }
+    // The pack they bought, so the confirmation page can be pack-specific.
+    const productId = Number(session.metadata?.productId);
+    const [pack] = productId
+      ? await db
+          .select({
+            title: productsTable.title,
+            shortTitle: productsTable.shortTitle,
+            subtitle: productsTable.subtitle,
+            imageUrl: productsTable.imageUrl,
+          })
+          .from(productsTable)
+          .where(eq(productsTable.id, productId))
+      : [];
     res.json({
       value: session.amount_total != null ? session.amount_total / 100 : null,
       currency: (session.currency ?? "usd").toUpperCase(),
       orderId: session.id,
+      quantity: session.line_items?.data[0]?.quantity ?? 1,
+      subtotal: (session.amount_subtotal ?? 0) / 100,
+      shipping: (session.shipping_cost?.amount_total ?? 0) / 100,
+      tax: (session.total_details?.amount_tax ?? 0) / 100,
+      shipTo: session.shipping_details
+        ? {
+            name: session.shipping_details.name ?? "",
+            line1: session.shipping_details.address?.line1 ?? "",
+            line2: session.shipping_details.address?.line2 ?? "",
+            city: session.shipping_details.address?.city ?? "",
+            state: session.shipping_details.address?.state ?? "",
+            zip: session.shipping_details.address?.postal_code ?? "",
+          }
+        : null,
+      pack: pack ?? null,
     });
   } catch {
     res.status(404).json({ error: "session not found" });
