@@ -184,57 +184,118 @@ export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
 
 export type ConfirmationPack = {
   title: string;
+  shortTitle: string;
   subtitle: string;
   imageUrl: string;
+  confirmHeadline: string; // e.g. "Cowabunga."; "" falls back to "Locked in."
+  accentColor: string; // "#rrggbb"; anything else falls back to brand cyan
 };
 
 const DEFAULT_SUPPORT = "support@tommytopdecker.com";
+const SITE_URL = "https://www.tommytopdecker.com";
+const DEFAULT_ACCENT = "#22d3ee";
+const DEFAULT_HEADLINE = "Locked in.";
+const HEADLINE_FONT = "font-family:'Arial Black',Impact,Helvetica,sans-serif;font-weight:900;text-transform:uppercase";
+
+// Admin-entered, and it lands in a style attribute, so only a strict hex passes.
+function accentOf(pack: ConfirmationPack | null): string {
+  const c = pack?.accentColor?.trim() ?? "";
+  return /^#[0-9a-f]{6}$/i.test(c) ? c : DEFAULT_ACCENT;
+}
+
+// The accent at ~20% over black, for the glow behind the headline.
+function glowOf(hex: string): string {
+  const n = parseInt(hex.slice(1), 16);
+  const ch = (shift: number) => Math.round(((n >> shift) & 255) * 0.2).toString(16).padStart(2, "0");
+  return `#${ch(16)}${ch(8)}${ch(0)}`;
+}
+
+function absoluteUrl(url: string): string {
+  return url.startsWith("/") ? SITE_URL + url : url;
+}
 
 export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPack | null): OrderEmail {
-  const item = pack?.title || o.item || "your order";
   const qty = o.quantity || 1;
-  const firstName = (o.customerName || o.shipName).trim().split(/\s+/)[0] || "";
-  const total = `$${o.total}`;
+  // "TMNT Booster Pack" reads as "2 TMNT Booster packs", never "Pack packs".
+  const name = (pack?.shortTitle || pack?.title || o.item || "").replace(/\s+packs?$/i, "").trim();
+  const opener = pack?.confirmHeadline?.trim() || DEFAULT_HEADLINE;
+  const claim = name ? `${qty} ${name} ${qty === 1 ? "pack is" : "packs are"} yours.` : "Your order is in.";
+  const accent = accentOf(pack);
+  const orderRef = o.sessionId.slice(-8).toUpperCase();
+  const lineLabel = pack?.title || o.item || "Your order";
   const locality = [o.city, o.state].filter(Boolean).join(", ");
   const shipTo = [o.shipName || o.customerName, o.address1, o.address2, [locality, o.zip].filter(Boolean).join(" ")]
     .filter(Boolean);
-  const orderRef = o.sessionId.slice(-8).toUpperCase();
 
-  const subject = `Order confirmed: ${item}${qty > 1 ? ` ×${qty}` : ""}`;
+  const subject = `${opener.replace(/[.!]+$/, "")}: ${claim.replace(/\.$/, "")}`;
 
   const text = [
-    firstName ? `Hi ${firstName},` : "Hi,",
+    "ORDER CONFIRMED",
+    `${opener} ${claim}`,
     "",
-    `Your order is confirmed. We'll email tracking as soon as it ships.`,
-    "",
-    `${item}${pack?.subtitle ? ` (${pack.subtitle})` : ""}  ×${qty}`,
-    `Total paid: ${total}`,
     `Order #${orderRef}`,
+    `  ${lineLabel} ×${qty}  $${o.subtotal}`,
+    `  Shipping  $${o.shipping}`,
+    `  Tax       $${o.tax}`,
+    `  Total paid  $${o.total}`,
     "",
     "SHIPPING TO",
     ...shipTo.map((l) => `  ${l}`),
     "",
-    `Questions? Just reply to this email.`,
+    "We'll email tracking as soon as it ships. Questions? Just reply to this email.",
     "",
-    "Tommy Top Decker Trading",
+    SITE_URL,
   ].join("\n");
 
+  const label = (t: string, first = false) =>
+    `<tr><td colspan="2" style="padding:${first ? "14px" : "18px"} 0 6px;border-top:1px solid #222222;` +
+    `font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af">${esc(t)}</td></tr>`;
+  const line = (l: string, v: string) =>
+    `<tr><td style="color:#9ca3af">${esc(l)}</td><td align="right">${esc(v)}</td></tr>`;
+  const step = (t: string, on: boolean) =>
+    `<td style="border-top:3px solid ${on ? accent : "#333333"};color:${on ? accent : "#666666"};padding-top:8px">${t}</td>`;
+  const totalCell = "padding-top:8px;border-top:1px solid #333333;font-weight:700";
+
+  // Dark by design. Gmail drops the gradient and the tilt and shows flat black
+  // with an upright pack; Apple Mail renders both.
   const html = [
-    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;background:#ffffff;color:#111;padding:8px 4px">`,
-    `<p style="margin:0 0 16px;font-size:15px;line-height:1.5">${esc(firstName ? `Hi ${firstName},` : "Hi,")}</p>`,
-    `<p style="margin:0 0 20px;font-size:15px;line-height:1.5">Your order is confirmed. We'll email tracking as soon as it ships.</p>`,
+    `<div style="margin:0;background:#000000">`,
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000000"><tr><td align="center">`,
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="max-width:480px;background:#000000;` +
+      `background-image:radial-gradient(circle at 50% 22%,${glowOf(accent)} 0,#000000 55%)">`,
+    `<tr><td align="center" style="padding:28px 0 0">` +
+      `<img src="${SITE_URL}/favicon.png" width="28" height="28" alt="" style="vertical-align:middle">` +
+      ` <span style="vertical-align:middle;display:inline-block;text-align:left">` +
+      `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>` +
+      `<span style="display:block;font:700 8px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a;margin-top:3px">TRADING CARDS</span>` +
+      `</span></td></tr>`,
+    `<tr><td align="center" style="padding:26px 20px 0;font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a">ORDER CONFIRMED</td></tr>`,
+    `<tr><td align="center" style="padding:8px 20px 16px;${HEADLINE_FONT};font-size:36px;line-height:1.02;color:#ffffff">` +
+      `${esc(opener)}<br>${esc(claim)}</td></tr>`,
     pack?.imageUrl
-      ? `<img src="${esc(pack.imageUrl)}" alt="${esc(item)}" width="160" style="display:block;margin:0 0 16px;max-width:160px;height:auto">`
+      ? `<tr><td align="center" style="padding:6px 0 0"><img src="${esc(absoluteUrl(pack.imageUrl))}" width="220" ` +
+        `alt="${esc(pack.title)}" style="display:block;max-width:220px;height:auto;transform:rotate(-6deg)"></td></tr>`
       : "",
-    section(
-      "Your order",
-      `<strong>${esc(item)}</strong> &times;${qty}` +
-        (pack?.subtitle ? `<br><span style="color:#6b7280">${esc(pack.subtitle)}</span>` : "") +
-        `<br>Total paid: <strong>${esc(total)}</strong><br>Order #${esc(orderRef)}`,
-    ),
-    section("Shipping to", shipTo.map(esc).join("<br>")),
-    `<p style="margin:0;font-size:14px;color:#6b7280">Questions? Just reply to this email.</p>`,
-    `</div>`,
+    `<tr><td style="padding:24px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" ` +
+      `style="font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.12em;text-transform:uppercase;text-align:center"><tr>` +
+      `${step("Confirmed", true)}<td width="4"></td>${step("Packed", false)}<td width="4"></td>${step("Shipped", false)}` +
+      `</tr></table></td></tr>`,
+    `<tr><td style="padding:18px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" ` +
+      `style="font:14px/1.5 Helvetica,Arial,sans-serif;color:#ffffff">`,
+    label(`Order #${orderRef}`, true),
+    line(`${lineLabel} ×${qty}`, `$${o.subtotal}`),
+    line("Shipping", `$${o.shipping}`),
+    line("Tax", `$${o.tax}`),
+    `<tr><td style="${totalCell}">Total paid</td><td align="right" style="${totalCell}">${esc(`$${o.total}`)}</td></tr>`,
+    label("Shipping to"),
+    `<tr><td colspan="2" style="padding-bottom:4px">${shipTo.map(esc).join("<br>")}</td></tr>`,
+    `</table></td></tr>`,
+    `<tr><td align="center" style="padding:22px 28px 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
+      `We'll email tracking as soon as it ships. Questions? Just reply to this email.</td></tr>`,
+    `<tr><td align="center" style="padding:20px 0 36px"><a href="${SITE_URL}" style="display:inline-block;background:#22d3ee;` +
+      `color:#000000;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.25em;padding:12px 30px;border-radius:4px;` +
+      `text-decoration:none">BACK TO SHOP</a></td></tr>`,
+    `</table></td></tr></table></div>`,
   ].join("");
 
   return { subject, text, html };

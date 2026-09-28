@@ -172,7 +172,14 @@ async function packForSession(full: Stripe.Checkout.Session): Promise<Confirmati
   if (!productId) return null;
   try {
     const [p] = await db
-      .select({ title: productsTable.title, subtitle: productsTable.subtitle, imageUrl: productsTable.imageUrl })
+      .select({
+        title: productsTable.title,
+        shortTitle: productsTable.shortTitle,
+        subtitle: productsTable.subtitle,
+        imageUrl: productsTable.imageUrl,
+        confirmHeadline: productsTable.confirmHeadline,
+        accentColor: productsTable.accentColor,
+      })
       .from(productsTable)
       .where(eq(productsTable.id, productId));
     return p ?? null;

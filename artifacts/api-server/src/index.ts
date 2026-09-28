@@ -39,6 +39,8 @@ async function migrate() {
     ALTER TABLE products ADD COLUMN IF NOT EXISTS pull_probabilities TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS possible_pulls TEXT NOT NULL DEFAULT '[]';
     ALTER TABLE products ADD COLUMN IF NOT EXISTS intel_report TEXT NOT NULL DEFAULT '';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS confirm_headline TEXT NOT NULL DEFAULT '';
+    ALTER TABLE products ADD COLUMN IF NOT EXISTS accent_color TEXT NOT NULL DEFAULT '';
 
     CREATE TABLE IF NOT EXISTS orders (
       id SERIAL PRIMARY KEY,
