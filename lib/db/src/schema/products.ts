@@ -23,6 +23,8 @@ export const productsTable = pgTable("products", {
   pullProbabilities: text("pull_probabilities").notNull().default("[]"), // JSON array
   possiblePulls: text("possible_pulls").notNull().default("[]"),         // JSON array
   intelReport: text("intel_report").notNull().default(""),               // plain text, paragraphs separated by \n\n
+  confirmHeadline: text("confirm_headline").notNull().default(""),       // confirmation email opener, e.g. "Cowabunga."; "" = "Locked in."
+  accentColor: text("accent_color").notNull().default(""),               // confirmation email accent hex, e.g. "#66ff66"; "" = brand cyan
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

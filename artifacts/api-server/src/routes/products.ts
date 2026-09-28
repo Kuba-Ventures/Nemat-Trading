@@ -62,7 +62,7 @@ function requireAdmin(req: any, res: any, next: any) {
 
 // Admin: create product
 router.post("/admin/products", requireAdmin, async (req, res) => {
-  const { title, shortTitle, subtitle, price, imageUrl, stock, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
+  const { title, shortTitle, subtitle, price, imageUrl, stock, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport, confirmHeadline, accentColor } = req.body;
   const [product] = await db
     .insert(productsTable)
     .values({
@@ -82,6 +82,8 @@ router.post("/admin/products", requireAdmin, async (req, res) => {
       pullProbabilities: JSON.stringify(pullProbabilities ?? []),
       possiblePulls: JSON.stringify(possiblePulls ?? []),
       intelReport: intelReport ?? "",
+      confirmHeadline: confirmHeadline ?? "",
+      accentColor: accentColor ?? "",
       active: true,
     })
     .returning();
@@ -91,7 +93,7 @@ router.post("/admin/products", requireAdmin, async (req, res) => {
 // Admin: update product
 router.patch("/admin/products/:id", requireAdmin, async (req, res) => {
   const id = Number(req.params.id);
-  const { title, shortTitle, subtitle, price, imageUrl, stock, active, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport } = req.body;
+  const { title, shortTitle, subtitle, price, imageUrl, stock, active, specs, contents, expiresAt, scryfallId, discountPercent, tcgplayerUrl, tcgMarketPriceCents, pullProbabilities, possiblePulls, intelReport, confirmHeadline, accentColor } = req.body;
   const updates: Record<string, any> = {};
   if (title !== undefined) updates.title = title;
   if (shortTitle !== undefined) updates.shortTitle = shortTitle;
@@ -110,6 +112,8 @@ router.patch("/admin/products/:id", requireAdmin, async (req, res) => {
   if (pullProbabilities !== undefined) updates.pullProbabilities = JSON.stringify(pullProbabilities);
   if (possiblePulls !== undefined) updates.possiblePulls = JSON.stringify(possiblePulls);
   if (intelReport !== undefined) updates.intelReport = intelReport;
+  if (confirmHeadline !== undefined) updates.confirmHeadline = confirmHeadline;
+  if (accentColor !== undefined) updates.accentColor = accentColor;
 
   const [product] = await db
     .update(productsTable)

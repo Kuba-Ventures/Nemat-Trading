@@ -26,6 +26,8 @@ type Product = {
   pullProbabilities: string;
   possiblePulls: string;
   intelReport: string;
+  confirmHeadline: string;
+  accentColor: string;
   createdAt: string;
 };
 
@@ -281,6 +283,7 @@ const emptyForm = {
   title: "", shortTitle: "", subtitle: "", tcgplayerUrl: "", imageUrl: "",
   price: "", stock: "", expiresAt: "",
   scryfallId: "", discountPercent: "15",
+  confirmHeadline: "", accentColor: "",
 };
 
 const DEFAULT_PULL_PROBS: PullProb[] = [
@@ -526,6 +529,8 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     expiresAt: toDatetimeLocal(product.expiresAt),
     scryfallId: product.scryfallId ?? "",
     discountPercent: String(product.discountPercent ?? 15),
+    confirmHeadline: product.confirmHeadline ?? "",
+    accentColor: product.accentColor ?? "",
   } : emptyForm);
 
   const [specs, setSpecs] = useState<Spec[]>(
@@ -697,6 +702,8 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
       pullProbabilities: pullProbs,
       possiblePulls: possiblePulls,
       intelReport,
+      confirmHeadline: form.confirmHeadline.trim(),
+      accentColor: form.accentColor.trim(),
     };
     try {
       const url = isEdit ? `${API_URL}/api/admin/products/${product.id}` : `${API_URL}/api/admin/products`;
@@ -784,6 +791,27 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
                 <input value={form.subtitle} onChange={(e) => setForm({ ...form, subtitle: e.target.value })}
                   placeholder="e.g. Collector Booster Pack"
                   className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
+              </div>
+            </div>
+
+            {/* Order confirmation email: pack-specific opener and accent */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
+              <div>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-gray-600 block mb-1.5">Confirmation headline</label>
+                <input value={form.confirmHeadline} onChange={(e) => setForm({ ...form, confirmHeadline: e.target.value })}
+                  placeholder="e.g. Cowabunga. (falls back to Locked in.)"
+                  className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
+              </div>
+              <div>
+                <label className="text-[10px] uppercase tracking-[0.2em] text-gray-600 block mb-1.5">Confirmation accent</label>
+                <div className="flex gap-2">
+                  <input type="color" value={/^#[0-9a-f]{6}$/i.test(form.accentColor) ? form.accentColor : "#22d3ee"}
+                    onChange={(e) => setForm({ ...form, accentColor: e.target.value })}
+                    className="h-[46px] w-12 flex-none cursor-pointer rounded border border-white/10 bg-black" />
+                  <input value={form.accentColor} onChange={(e) => setForm({ ...form, accentColor: e.target.value })}
+                    placeholder="#66ff66 (falls back to cyan)"
+                    className="w-full rounded border border-white/10 bg-black px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
+                </div>
               </div>
             </div>
 
