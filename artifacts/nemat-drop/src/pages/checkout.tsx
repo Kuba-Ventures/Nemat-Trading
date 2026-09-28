@@ -114,7 +114,7 @@ export default function CheckoutPage() {
         <h1 className="text-3xl font-semibold mb-2">Complete your order</h1>
         <p className="text-sm text-gray-400 mb-8">Protected checkout powered by Stripe. Your payment details are processed securely.</p>
 
-        <div className="grid gap-4 rounded border border-white/10 bg-white/[0.03] p-6">
+        <div className="grid grid-cols-1 gap-4 rounded border border-white/10 bg-white/[0.03] p-6">
           {/* Order summary */}
           <div className="flex items-center justify-between border-b border-white/10 pb-4">
             <div>
@@ -141,7 +141,7 @@ export default function CheckoutPage() {
                 placeholder="ZIP code"
                 value={zip}
                 onChange={(e) => setZip(e.target.value.replace(/\D/g, "").slice(0, 5))}
-                className="flex-1 bg-white/[0.03] border border-white/10 rounded px-4 py-3 text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 rounded px-4 py-3 text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
               />
               <button
                 onClick={handleFetchRates}
