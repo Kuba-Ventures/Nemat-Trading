@@ -26,10 +26,12 @@
  */
 
 /**
- * Where new-order notifications go. Set to '' to turn the emails off — the sheet
+ * RETIRED: the API now sends the new-order email itself via Resend
+ * (src/lib/orderEmail.ts), from orders@tommytopdecker.com. Left '' so orders don't
+ * email twice. Where new-order notifications go. Set to '' to turn the emails off; the sheet
  * append is unaffected either way, since the notification is strictly additive.
  */
-const NOTIFY_EMAIL = 'sales@tommytopdecker.com';
+const NOTIFY_EMAIL = '';
 
 /**
  * TTD logo, embedded as base64 rather than linked from the site. Keeps the email
