@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { buildOrderEmail, type OrderEmailInput } from "./orderEmail";
+import { buildConfirmationEmail, buildOrderEmail, type OrderEmailInput } from "./orderEmail";
 
 const ORDER: OrderEmailInput = {
   sessionId: "cs_test_123",
@@ -51,4 +51,37 @@ test("customer-supplied fields are HTML-escaped", () => {
   const { html } = buildOrderEmail({ ...ORDER, shipName: "<script>x</script>" });
   assert.ok(!html.includes("<script>"));
   assert.ok(html.includes("&lt;script&gt;"));
+});
+
+const PACK = {
+  title: "Teenage Mutant Ninja Turtles",
+  subtitle: "Collector Booster Pack",
+  imageUrl: "https://example.com/tmnt.png",
+};
+
+test("confirmation names the pack, greets by first name and shows the pack image", () => {
+  const { subject, text, html } = buildConfirmationEmail(ORDER, PACK);
+  assert.equal(subject, "Order confirmed: Teenage Mutant Ninja Turtles");
+  assert.ok(text.startsWith("Hi Test,"));
+  assert.ok(text.includes("Collector Booster Pack"));
+  assert.ok(html.includes('src="https://example.com/tmnt.png"'));
+});
+
+test("confirmation falls back to the Stripe item name with no pack", () => {
+  const { subject, html } = buildConfirmationEmail({ ...ORDER, quantity: 2 }, null);
+  assert.equal(subject, "Order confirmed: Teenage Mutant Ninja Turtles ×2");
+  assert.ok(!html.includes("<img"));
+});
+
+test("confirmation leaves out sales-only details", () => {
+  const { text, html } = buildConfirmationEmail(ORDER, PACK);
+  for (const body of [text, html]) {
+    assert.ok(!body.includes("dashboard.stripe.com"));
+    assert.ok(!body.includes("+1 555 010 1234"));
+  }
+});
+
+test("confirmation escapes customer-supplied fields", () => {
+  const { html } = buildConfirmationEmail({ ...ORDER, customerName: "<b>x</b>" }, PACK);
+  assert.ok(!html.includes("<b>x</b>"));
 });

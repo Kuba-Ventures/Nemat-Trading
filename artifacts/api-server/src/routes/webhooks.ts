@@ -1,9 +1,15 @@
 import type { Request, Response } from "express";
 import Stripe from "stripe";
-import { db, ordersTable } from "@workspace/db";
+import { eq } from "drizzle-orm";
+import { db, ordersTable, productsTable } from "@workspace/db";
 import { appendToSheet } from "../lib/sheets";
 import { orderRowFromSession } from "../lib/orderFromSession";
-import { sendOrderEmail } from "../lib/orderEmail";
+import {
+  sendConfirmationEmail,
+  sendOrderEmail,
+  type ConfirmationPack,
+  type OrderEmailInput,
+} from "../lib/orderEmail";
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers["stripe-signature"];
@@ -87,30 +93,36 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       console.error("[webhook] order insert failed:", err);
     }
 
-    // Email sales the packing list (never throws, skipped on retries).
-    const emailSent = isNewOrder
-      ? sendOrderEmail({
-          sessionId: full.id,
-          item: itemName,
-          quantity: orderCount,
-          subtotal: (subtotalCents / 100).toFixed(2),
-          shipping: (shippingCents / 100).toFixed(2),
-          tax: (taxCents / 100).toFixed(2),
-          taxRate,
-          total: (totalCents / 100).toFixed(2),
-          currency,
-          customerEmail,
-          customerName,
-          customerPhone,
-          shipName,
-          address1: addr?.line1 ?? "",
-          address2: addr?.line2 ?? "",
-          city: addr?.city ?? "",
-          state: addr?.state ?? "",
-          zip: addr?.postal_code ?? "",
-          country: addr?.country ?? "",
-          paymentIntentId,
-        })
+    const emailInput: OrderEmailInput = {
+      sessionId: full.id,
+      item: itemName,
+      quantity: orderCount,
+      subtotal: (subtotalCents / 100).toFixed(2),
+      shipping: (shippingCents / 100).toFixed(2),
+      tax: (taxCents / 100).toFixed(2),
+      taxRate,
+      total: (totalCents / 100).toFixed(2),
+      currency,
+      customerEmail,
+      customerName,
+      customerPhone,
+      shipName,
+      address1: addr?.line1 ?? "",
+      address2: addr?.line2 ?? "",
+      city: addr?.city ?? "",
+      state: addr?.state ?? "",
+      zip: addr?.postal_code ?? "",
+      country: addr?.country ?? "",
+      paymentIntentId,
+    };
+
+    // Email sales the packing list and the customer their confirmation, both
+    // straight away (never throw, skipped on retries).
+    const emailsSent = isNewOrder
+      ? Promise.all([
+          sendOrderEmail(emailInput),
+          packForSession(full).then((pack) => sendConfirmationEmail(emailInput, pack)),
+        ])
       : Promise.resolve();
 
     // Append to Google Sheet (non-blocking failure).
@@ -141,7 +153,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       addr?.country ?? "",
       paymentIntentId,
     ], { dedupeCol: 2 });
-    await emailSent;
+    await emailsSent;
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);
   } catch (err) {
@@ -151,4 +163,21 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   }
 
   res.json({ received: true });
+}
+
+// The pack the customer bought, for the confirmation email. Falls back to the
+// Stripe line item name (null here) if the product row is gone or the DB errors.
+async function packForSession(full: Stripe.Checkout.Session): Promise<ConfirmationPack | null> {
+  const productId = Number(full.metadata?.productId);
+  if (!productId) return null;
+  try {
+    const [p] = await db
+      .select({ title: productsTable.title, subtitle: productsTable.subtitle, imageUrl: productsTable.imageUrl })
+      .from(productsTable)
+      .where(eq(productsTable.id, productId));
+    return p ?? null;
+  } catch (err) {
+    console.error("[webhook] pack lookup failed:", err);
+    return null;
+  }
 }

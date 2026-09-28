@@ -124,17 +124,22 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
   return { subject, text, html, ...(o.customerEmail ? { replyTo: o.customerEmail } : {}) };
 }
 
+type ResendEmail = {
+  from: string;
+  to: string[];
+  subject: string;
+  text: string;
+  html: string;
+  reply_to?: string;
+};
+
 // Never throws: a mail failure must not fail the webhook, or Stripe retries it.
-export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
+async function sendViaResend(email: ResendEmail, idempotencyKey: string, tag: string): Promise<void> {
   const apiKey = process.env.RESEND_API_KEY;
   if (!apiKey) {
-    console.warn("[order-email] RESEND_API_KEY not set, skipping new-order email");
+    console.warn(`[${tag}] RESEND_API_KEY not set, skipping`);
     return;
   }
-  const to = process.env.ORDER_NOTIFY_EMAIL || DEFAULT_TO;
-  const from = process.env.ORDER_EMAIL_FROM || DEFAULT_FROM;
-  const email = buildOrderEmail(o);
-
   try {
     const res = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -142,24 +147,115 @@ export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
         Authorization: `Bearer ${apiKey}`,
         "Content-Type": "application/json",
         // Resend drops a repeat send with the same key, a second guard against dupes.
-        "Idempotency-Key": `order-${o.sessionId}`,
+        "Idempotency-Key": idempotencyKey,
       },
-      body: JSON.stringify({
-        from,
-        to: [to],
-        subject: email.subject,
-        text: email.text,
-        html: email.html,
-        ...(email.replyTo ? { reply_to: email.replyTo } : {}),
-      }),
+      body: JSON.stringify(email),
       signal: AbortSignal.timeout(10_000),
     });
     if (!res.ok) {
-      console.error(`[order-email] Resend ${res.status}: ${await res.text()}`);
+      console.error(`[${tag}] Resend ${res.status}: ${await res.text()}`);
       return;
     }
-    console.log(`[order-email] sent for ${o.sessionId} to ${to}`);
+    console.log(`[${tag}] sent ${idempotencyKey} to ${email.to.join(", ")}`);
   } catch (err) {
-    console.error("[order-email] send failed:", err);
+    console.error(`[${tag}] send failed:`, err);
   }
+}
+
+export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
+  const email = buildOrderEmail(o);
+  await sendViaResend(
+    {
+      from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
+      to: [process.env.ORDER_NOTIFY_EMAIL || DEFAULT_TO],
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+      ...(email.replyTo ? { reply_to: email.replyTo } : {}),
+    },
+    `order-${o.sessionId}`,
+    "order-email",
+  );
+}
+
+// ─── Customer confirmation ───────────────────────────────────────────────────
+// Stripe's own receipt can arrive minutes after checkout. This one goes out from
+// the webhook the moment the order is recorded, and names the pack they bought.
+
+export type ConfirmationPack = {
+  title: string;
+  subtitle: string;
+  imageUrl: string;
+};
+
+const DEFAULT_SUPPORT = "support@tommytopdecker.com";
+
+export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPack | null): OrderEmail {
+  const item = pack?.title || o.item || "your order";
+  const qty = o.quantity || 1;
+  const firstName = (o.customerName || o.shipName).trim().split(/\s+/)[0] || "";
+  const total = `$${o.total}`;
+  const locality = [o.city, o.state].filter(Boolean).join(", ");
+  const shipTo = [o.shipName || o.customerName, o.address1, o.address2, [locality, o.zip].filter(Boolean).join(" ")]
+    .filter(Boolean);
+  const orderRef = o.sessionId.slice(-8).toUpperCase();
+
+  const subject = `Order confirmed: ${item}${qty > 1 ? ` ×${qty}` : ""}`;
+
+  const text = [
+    firstName ? `Hi ${firstName},` : "Hi,",
+    "",
+    `Your order is confirmed. We'll email tracking as soon as it ships.`,
+    "",
+    `${item}${pack?.subtitle ? ` (${pack.subtitle})` : ""}  ×${qty}`,
+    `Total paid: ${total}`,
+    `Order #${orderRef}`,
+    "",
+    "SHIPPING TO",
+    ...shipTo.map((l) => `  ${l}`),
+    "",
+    `Questions? Just reply to this email.`,
+    "",
+    "Tommy Top Decker Trading",
+  ].join("\n");
+
+  const html = [
+    `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;background:#ffffff;color:#111;padding:8px 4px">`,
+    `<p style="margin:0 0 16px;font-size:15px;line-height:1.5">${esc(firstName ? `Hi ${firstName},` : "Hi,")}</p>`,
+    `<p style="margin:0 0 20px;font-size:15px;line-height:1.5">Your order is confirmed. We'll email tracking as soon as it ships.</p>`,
+    pack?.imageUrl
+      ? `<img src="${esc(pack.imageUrl)}" alt="${esc(item)}" width="160" style="display:block;margin:0 0 16px;max-width:160px;height:auto">`
+      : "",
+    section(
+      "Your order",
+      `<strong>${esc(item)}</strong> &times;${qty}` +
+        (pack?.subtitle ? `<br><span style="color:#6b7280">${esc(pack.subtitle)}</span>` : "") +
+        `<br>Total paid: <strong>${esc(total)}</strong><br>Order #${esc(orderRef)}`,
+    ),
+    section("Shipping to", shipTo.map(esc).join("<br>")),
+    `<p style="margin:0;font-size:14px;color:#6b7280">Questions? Just reply to this email.</p>`,
+    `</div>`,
+  ].join("");
+
+  return { subject, text, html };
+}
+
+export async function sendConfirmationEmail(
+  o: OrderEmailInput,
+  pack: ConfirmationPack | null,
+): Promise<void> {
+  if (!o.customerEmail) return;
+  const email = buildConfirmationEmail(o, pack);
+  await sendViaResend(
+    {
+      from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
+      to: [o.customerEmail],
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+      reply_to: process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT,
+    },
+    `confirm-${o.sessionId}`,
+    "confirm-email",
+  );
 }
