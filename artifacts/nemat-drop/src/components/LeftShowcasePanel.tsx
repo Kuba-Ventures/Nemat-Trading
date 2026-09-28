@@ -3,7 +3,7 @@ import { useId, useRef, useState, useCallback } from "react";
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
 
-function MiniEmailSignup() {
+export function MiniEmailSignup() {
   const inputId = useId();
   const errorId = useId();
   const [email, setEmail] = useState("");
