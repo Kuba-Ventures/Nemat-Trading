@@ -1,4 +1,5 @@
 import type Stripe from "stripe";
+import { attributionColumnsFromMetadata } from "./attribution";
 
 // Build the orders-table row from an (expanded) Stripe Checkout Session.
 // Shared by the live webhook and the admin backfill so both stay identical.
@@ -40,6 +41,7 @@ export function orderRowFromSession(full: Stripe.Checkout.Session) {
     taxCents,
     totalCents,
     shippingAddress: formattedAddress || null,
+    ...attributionColumnsFromMetadata(full.metadata),
     // Use the real Stripe purchase time, not DB insert time — so backfilled
     // orders carry their true date. (`created` is a unix-seconds timestamp.)
     createdAt: new Date(full.created * 1000),

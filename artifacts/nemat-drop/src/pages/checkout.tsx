@@ -1,6 +1,7 @@
 import { useMemo, useState } from "react";
 import { product } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
+import { getAttribution } from "@/lib/attribution";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -79,7 +80,12 @@ export default function CheckoutPage() {
       const res = await fetch(`${API_URL}/api/checkout`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ productId, quantity: qty, shippingRateId: selectedRateId }),
+        body: JSON.stringify({
+          productId,
+          quantity: qty,
+          shippingRateId: selectedRateId,
+          attribution: getAttribution(),
+        }),
       });
       const text = await res.text();
       let data: any;
