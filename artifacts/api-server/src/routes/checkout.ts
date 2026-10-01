@@ -2,6 +2,7 @@ import { Router } from "express";
 import Stripe from "stripe";
 import { db, productsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
+import { attributionToMetadata, sanitizeAttribution } from "../lib/attribution";
 
 const SHIPPO_API = "https://api.goshippo.com";
 
@@ -23,10 +24,11 @@ const MAX_QUANTITY_PER_ORDER = 2;
 
 router.post("/checkout", async (req, res) => {
   console.log("[checkout] body:", JSON.stringify(req.body));
-  const { productId, quantity, shippingRateId } = req.body as {
+  const { productId, quantity, shippingRateId, attribution } = req.body as {
     productId: number;
     quantity: number;
     shippingRateId?: string;
+    attribution?: unknown;
   };
 
   if (!productId || !quantity || !Number.isInteger(quantity) || quantity < 1) {
@@ -114,6 +116,8 @@ router.post("/checkout", async (req, res) => {
     ],
     metadata: {
       productId: String(productId),
+      // Ad click id + UTM tags, so the order can be matched to a Meta ad.
+      ...attributionToMetadata(sanitizeAttribution(attribution)),
     },
     success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${frontendUrl}/checkout?qty=${quantity}`,

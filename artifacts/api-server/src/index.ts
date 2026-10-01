@@ -61,6 +61,17 @@ async function migrate() {
     -- bootstrap, so existing DBs lack the column — the webhook INSERT and the
     -- account-orders SELECT both reference it and 500. Backfill it idempotently.
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tax_cents INTEGER NOT NULL DEFAULT 0;
+    -- Ad attribution (Meta click id, pixel cookies, UTM tags), all nullable so
+    -- existing rows and untagged visitors are unaffected.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS fbclid TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS fbc TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS fbp TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_source TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_medium TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_campaign TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_content TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS landed_at TEXT;
 
     CREATE TABLE IF NOT EXISTS subscribers (
       id SERIAL PRIMARY KEY,

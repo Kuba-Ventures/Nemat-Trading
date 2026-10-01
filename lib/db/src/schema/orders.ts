@@ -13,6 +13,16 @@ export const ordersTable = pgTable("orders", {
   taxCents: integer("tax_cents").notNull().default(0),
   totalCents: integer("total_cents").notNull(),
   shippingAddress: text("shipping_address"),
+  // Ad attribution captured in the browser and passed through Stripe metadata.
+  fbclid: text("fbclid"),
+  fbc: text("fbc"),
+  fbp: text("fbp"),
+  utmSource: text("utm_source"),
+  utmMedium: text("utm_medium"),
+  utmCampaign: text("utm_campaign"),
+  utmContent: text("utm_content"),
+  utmTerm: text("utm_term"),
+  landedAt: text("landed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
