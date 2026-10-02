@@ -23,10 +23,15 @@ returns APPROVE-LOWRISK against this policy.
 - `lib/db/**` — database schema, migrations, or data deletion/retention
 - Access control / permissions
 - CI, workflows, build config, or dependency changes
+- The merge policy and the reviewer themselves (`CLAUDE.md`, `.claude/**`), even
+  though they are Markdown
 - Anything outside the low-risk surfaces above
 
 The reviewer (`.claude/agents/pr-reviewer.md`) is the source of truth for how this policy
-is enforced. Tighten this block whenever something slips through.
+is enforced. Tighten this block whenever something slips through. The workflow also
+checks the changed-file list against the low-risk surfaces itself, and downgrades an
+APPROVE-LOWRISK to ESCALATE if any file falls outside them; keep that list in
+`.github/workflows/factory.yml` in step with this block.
 
 # Working style (personal)
 
