@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { buildListingsRequestBody, pickBuyBoxPrice } from "../lib/tcg-pricing";
+import { createRateLimiter } from "../lib/rate-limit";
 
 const router = Router();
 
@@ -126,10 +127,45 @@ async function scrapeTCGPlayer(url: string): Promise<{ imageUrl: string | null; 
 }
 
 // ─── Routes ───────────────────────────────────────────────────────────────────
+//
+// Who calls what (checked against artifacts/nemat-drop):
+// - POST /tcgplayer/price: the public storefront (useTcgPrice, hero strip and
+//   purchase bar), logged out. Stays public, but rate limited and validated.
+// - POST /lookup/tcgplayer: the admin product form only. Admin-gated.
+// - GET /scryfall/:id/price and GET /tcgplayer/price-check: no frontend caller.
+//   Admin-gated so they stay usable for spot checks with the admin key.
+// - GET /tcgplayer/debug: removed. It dumped raw upstream responses and HTML.
 
-// Proxy Scryfall price by card ID
-router.get("/scryfall/:id/price", async (req, res) => {
-  const { id } = req.params;
+const SCRYFALL_ID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+const TCG_PRODUCT_ID_RE = /^\d{1,10}$/;
+
+/**
+ * Accept only a TCGPlayer product page URL and return its numeric product ID.
+ * Anything else (other hosts, non-product paths, junk) returns null, so the
+ * public price route can never be pointed at an arbitrary target.
+ */
+export function parseTcgProductUrl(raw: unknown): string | null {
+  if (typeof raw !== "string" || raw.length > 500) return null;
+  const trimmed = raw.trim();
+  // Admins paste URLs into a free-text field, so tolerate a missing scheme.
+  const withScheme = /^[a-z][a-z0-9+.-]*:\/\//i.test(trimmed) ? trimmed : `https://${trimmed}`;
+  let u: URL;
+  try { u = new URL(withScheme); } catch { return null; }
+  if (u.protocol !== "https:" && u.protocol !== "http:") return null;
+  if (u.hostname !== "www.tcgplayer.com" && u.hostname !== "tcgplayer.com") return null;
+  const m = u.pathname.match(/^\/product\/(\d{1,10})(?:\/|$)/);
+  return m ? m[1] : null;
+}
+
+// The storefront polls once per 5 minutes per tab and shares one fetch across
+// components, so 30 calls per 10 minutes per client is generous for real
+// visitors (several tabs, shared NAT) while capping upstream fan-out per client.
+const publicPriceLimiter = createRateLimiter({ windowMs: 10 * 60 * 1000, max: 30 });
+
+// Proxy Scryfall price by card ID (no frontend caller; admin spot checks only)
+router.get("/scryfall/:id/price", requireAdmin, async (req, res) => {
+  const id = String(req.params.id);
+  if (!SCRYFALL_ID_RE.test(id)) { res.status(400).json({ error: "invalid id" }); return; }
   try {
     const response = await scryfallFetch(`https://api.scryfall.com/cards/${id}`);
     if (!response.ok) { res.json({ usd: null }); return; }
@@ -140,67 +176,26 @@ router.get("/scryfall/:id/price", async (req, res) => {
   }
 });
 
-// Live refresh: fetch current lowest price from a TCGPlayer product URL
-router.post("/tcgplayer/price", async (req, res) => {
-  const { url } = req.body as { url?: string };
-  if (!url) { res.status(400).json({ error: "url required" }); return; }
-  const { lowestPrice } = await scrapeTCGPlayer(url);
-  res.json({ lowestPrice });
+// Live refresh: fetch current lowest price from a TCGPlayer product URL.
+// PUBLIC: the storefront calls this for logged-out visitors. Only a price (or
+// null) ever goes back; upstream errors and bodies are swallowed.
+router.post("/tcgplayer/price", publicPriceLimiter, async (req, res) => {
+  const productId = parseTcgProductUrl((req.body as { url?: unknown } | undefined)?.url);
+  if (!productId) { res.status(400).json({ error: "a tcgplayer.com product url is required" }); return; }
+  try {
+    const { lowestPrice } = await scrapeTCGPlayer(`https://www.tcgplayer.com/product/${productId}/product`);
+    res.json({ lowestPrice });
+  } catch {
+    res.json({ lowestPrice: null });
+  }
 });
 
-// GET version for easy browser testing: /api/tcgplayer/price-check?id=657851
-router.get("/tcgplayer/price-check", async (req, res) => {
-  const id = req.query.id as string;
-  if (!id) { res.status(400).json({ error: "id query param required" }); return; }
-  const url = `https://www.tcgplayer.com/product/${id}/product`;
-  const result = await scrapeTCGPlayer(url);
+// Admin spot check: /api/tcgplayer/price-check?id=657851 (send x-admin-key)
+router.get("/tcgplayer/price-check", requireAdmin, async (req, res) => {
+  const id = typeof req.query.id === "string" ? req.query.id : "";
+  if (!TCG_PRODUCT_ID_RE.test(id)) { res.status(400).json({ error: "numeric id query param required" }); return; }
+  const result = await scrapeTCGPlayer(`https://www.tcgplayer.com/product/${id}/product`);
   res.json(result);
-});
-
-// Debug: dump raw responses from TCGPlayer APIs — /api/tcgplayer/debug?id=657851
-router.get("/tcgplayer/debug", async (req, res) => {
-  const id = req.query.id as string;
-  if (!id) { res.status(400).json({ error: "id required" }); return; }
-  const headers = {
-    "User-Agent": "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-    "Referer": "https://www.tcgplayer.com/",
-    "Origin": "https://www.tcgplayer.com",
-    "Accept": "application/json, text/plain, */*",
-  };
-  const results: Record<string, any> = {};
-  try {
-    const r = await fetch(`https://mpapi.tcgplayer.com/v2/product/${id}/listings?mpfev=2&limit=10&offset=0`, { headers });
-    results.listings = { status: r.status, body: await r.json() };
-  } catch (e: any) { results.listings = { error: e.message }; }
-  try {
-    const r = await fetch(`https://mpapi.tcgplayer.com/v2/product/${id}/pricepoints?mpfev=2`, { headers });
-    results.pricepoints = { status: r.status, body: await r.json() };
-  } catch (e: any) { results.pricepoints = { error: e.message }; }
-  try {
-    const r = await fetch(`https://mpapi.tcgplayer.com/v2/product/${id}/extendeddata?mpfev=2`, { headers });
-    results.extendeddata = { status: r.status, body: await r.json() };
-  } catch (e: any) { results.extendeddata = { error: e.message }; }
-  try {
-    const r = await fetch(`https://mpapi.tcgplayer.com/v2/product/${id}?mpfev=2`, { headers });
-    results.productDetails = { status: r.status, body: await r.json() };
-  } catch (e: any) { results.productDetails = { error: e.message }; }
-  // Check what the HTML page returns (Cloudflare block check)
-  try {
-    const r = await fetch(`https://www.tcgplayer.com/product/${id}/`, {
-      headers: { ...headers, "Accept": "text/html,application/xhtml+xml", "Referer": "https://www.google.com/" },
-      redirect: "follow",
-    });
-    const html = await r.text();
-    const asLowAs = html.match(/as\s+low\s+as\s+\$?([\d]+\.[\d]{2})/i);
-    const cfBlocked = html.includes("Just a moment") || html.includes("cf-browser-verification") || html.includes("challenge-platform");
-    results.htmlScrape = {
-      status: r.status,
-      cloudflareBlocked: cfBlocked,
-      asLowAsMatch: asLowAs?.[1] ?? null,
-      htmlSnippet: html.slice(0, 500),
-    };
-  } catch (e: any) { results.htmlScrape = { error: e.message }; }
-  res.json(results);
 });
 
 // Scrape TCGPlayer product page for description + contents
@@ -912,8 +907,9 @@ function generateIntelReport(set: any, slug: string): string {
   return report;
 }
 
-// Lookup product data from a TCGPlayer URL
-router.post("/lookup/tcgplayer", async (req, res) => {
+// Lookup product data from a TCGPlayer URL (admin product form only; it also
+// spends Anthropic credits on every call, so it must never be public)
+router.post("/lookup/tcgplayer", requireAdmin, async (req, res) => {
   const { url } = req.body as { url: string };
   if (!url) { res.status(400).json({ error: "url is required" }); return; }
 
