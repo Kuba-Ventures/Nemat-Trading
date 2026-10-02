@@ -1,6 +1,6 @@
 # Tommy Top Decker Trading Roadmap: turn paid ad traffic into attributable, repeatable drops
 
-*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and awaiting its first verdict · last verified against the code 2026-10-02*
+*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured · last verified against the code 2026-10-02*
 
 ## What this is
 
@@ -37,25 +37,27 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - [ ] **(growth)** Surface attribution in the admin. The order APIs do not return the new columns yet (per #100).
 - [x] **(build)** Google Ads MCP setup docs and scripts, local and Cloud Run (`docs/google-ads-mcp.md`, `scripts/setup-google-ads-mcp.sh`, `scripts/deploy-google-ads-mcp-cloudrun.sh`).
 
-## Stage 3: Keep the factory working (in progress)
+## Stage 3: Keep the factory working (done)
 
-- [~] ⚠️ **(build)** Fix `factory-review`, which failed before its first turn on every run from 2026-09-28 (Kuba-Ventures/Nemat-Trading#96). The cause was not the OAuth token: the floating `anthropics/claude-code-action@v1` tag moved that day to a broken release (v1.0.236, Claude Code 2.1.284). Fixed in Kuba-Ventures/Nemat-Trading#102:
+- [x] **(build)** Fix `factory-review`, which failed before its first turn on every run from 2026-09-28 (Kuba-Ventures/Nemat-Trading#96). The cause was not the OAuth token: the floating `anthropics/claude-code-action@v1` tag moved that day to a broken release (v1.0.236, Claude Code 2.1.284). Fixed in Kuba-Ventures/Nemat-Trading#102:
   - The action is pinned to v1.0.239, SHA `97c53473391bff1901034d4b454b5bac7ab7a029`.
   - The enforce step runs even when the review step fails, so a failed review says so instead of passing silently.
   - Fail-open CI-change detection fixed.
   - APPROVE-LOWRISK now needs `reviewer_completed` plus the changed-path backstop; `CLAUDE.md` and `.claude/**` always escalate.
-  - PRs #93 to #99 were hand-merged without a review. #96 stays open until a code PR gets a real VERDICT comment on the pinned SHA.
+  - PRs #93 to #99 were hand-merged without a review. Kuba-Ventures/Nemat-Trading#96 closed 2026-10-02 after Kuba-Ventures/Nemat-Trading#104, the first code PR on the pinned SHA, got a real verdict (ESCALATE, `is_error: false`).
 - [x] **(build)** Tests in the factory gate: `tsx --test` in `api-server` and Vitest in `nemat-drop` (Kuba-Ventures/Nemat-Trading#98, Kuba-Ventures/Nemat-Trading#99).
 - [x] **(build)** Make a broken review fail loudly instead of passing silently (suggested in #96 as a real-call auth check; done instead by running the enforce step on failure in Kuba-Ventures/Nemat-Trading#102).
 
 ## Stage 4: Later
 
-- [~] **(compliance)** Secure the Scryfall/TCGPlayer lookup routes in `src/routes/scryfall.ts`. Open in Kuba-Ventures/Nemat-Trading#104 (awaiting human review): `/tcgplayer/debug` removed; `/lookup/tcgplayer`, `/scryfall/:id/price` and `/tcgplayer/price-check` behind `requireAdmin`; `/tcgplayer/price` stays public for the storefront with a rate limit and URL validation.
+- [x] **(compliance)** Secure the Scryfall/TCGPlayer lookup routes in `src/routes/scryfall.ts`. Merged in Kuba-Ventures/Nemat-Trading#104 (2026-10-02): `/tcgplayer/debug` removed; `/lookup/tcgplayer`, `/scryfall/:id/price` and `/tcgplayer/price-check` behind `requireAdmin`; `/tcgplayer/price` stays public for the storefront with a rate limit (30 per 10 minutes per client, in-memory, keyed on the rightmost `X-Forwarded-For` entry) and URL validation.
 - [ ] **(build)** Move admin image uploads off Railway's ephemeral disk (Cloudinary is optional today; `src/routes/upload.ts`).
 - [ ] **(build)** Replace inline `ALTER TABLE` bootstrap migrations with a migration system (`src/index.ts`).
 - [ ] **(compliance)** Replace the client-side `VITE_ADMIN_PASSWORD` gate, which ships in the browser bundle.
 
 ## Open questions
+
+- Does Railway append the client IP to `X-Forwarded-For` (as the #104 rate limiter assumes) or overwrite the header? If it overwrites, the limiter key needs to change.
 
 - Has "Re-lock pull odds" been run on production? PROJECT.md (last updated 2026-06-12) lists it as the one remaining step and nothing in the repo records it.
 - Where does Postgres actually live? `README.md` says Railway; `CLAUDE.md` and `PROJECT.md` say Supabase.
