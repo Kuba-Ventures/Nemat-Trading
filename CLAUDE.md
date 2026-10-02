@@ -5,6 +5,17 @@ pnpm monorepo. Vite/React frontend (`artifacts/nemat-drop`) deploys to Vercel; E
 migrations against a Supabase-hosted Postgres). Stripe checkout + webhooks, Shippo shipping,
 Google Apps Script sheet sync, Anthropic + remove.bg integrations.
 
+## Initiative and previews
+
+These are the owner's standing preferences. This repo's merge policy and the rules below it still apply and take precedence where they conflict.
+
+- **Do it, don't tell me to do it.** If a step can be done directly (clicking through a dashboard in the browser, running a CLI, calling an MCP or API), do it instead of handing the owner instructions. This covers Vercel, Railway, Supabase, Stripe, Shippo, Resend, Cloudinary, Google Apps Script and Sheets, Google Tag Manager, Meta Ads, Google Ads, Anthropic and GitHub.
+- **Verify before reporting.** Open dashboards, check settings, pull logs and run read-only queries to confirm results yourself.
+- **Make routine, reversible changes** that are part of the request without asking: toggling settings, creating webhooks or segments, redeploying, opening PRs.
+- **Stop and ask first** before spending money (ad budgets, launching or editing live campaigns, purchases), sending messages as the owner, entering live API keys, passwords or 2FA codes, DNS or domain changes, and deleting data. When you stop, stage everything so the owner only has to confirm or paste one thing.
+- **If a permission check blocks you,** say so in one line and give the shortest exact step to finish it. Don't look for a workaround.
+- **Show, don't link.** When there's something to look at (a dev server, a Vercel preview or production deploy, a changed page, a dashboard), open it in a browser tab yourself, and after a UI change share a screenshot of the result.
+
 ## Merge policy
 
 This repo runs a supervised PR factory. A PR auto-merges only when the factory review
