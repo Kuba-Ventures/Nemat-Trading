@@ -132,19 +132,18 @@ All routes are mounted under `/api`.
 | `POST` | `/api/checkout` | Creates a Stripe Checkout Session. Body: `{ productId, quantity, shippingRateId }`. Returns `{ url }`. `shippingRateId` must come from `/api/shipping/rates` — the server re-fetches the rate from Shippo to prevent price tampering. |
 | `POST` | `/api/webhooks/stripe` | Stripe webhook receiver. Records completed orders to the DB and appends a row to the Orders sheet. Requires a valid Stripe signature. |
 
-### Card intel / TCGPlayer (internal tools — no auth required)
+### Card intel / TCGPlayer
 
-These endpoints are used by the admin panel for card research. They are unauthenticated — consider adding `requireAdmin` if the server is exposed publicly.
+Everything here except `/api/tcgplayer/price` requires the `x-admin-key: <ADMIN_SECRET>` header.
 
-| Method | Path | Description |
-|---|---|---|
-| `GET` | `/api/scryfall/:id/price` | Fetches price data for a Scryfall card ID. |
-| `POST` | `/api/tcgplayer/price` | Looks up a TCGPlayer price. Body: `{ name }`. |
-| `GET` | `/api/tcgplayer/price-check` | Spot-check TCGPlayer price for a given query param. |
-| `GET` | `/api/tcgplayer/debug` | Debug endpoint for TCGPlayer scraping. |
-| `POST` | `/api/lookup/tcgplayer` | Full TCGPlayer lookup with enrichment. Body: `{ name }`. |
-| `POST` | `/api/intel-report/restyle` | Calls Claude to generate a card intel report. Requires `ANTHROPIC_API_KEY`. Body: `{ name }`. Returns 503 if key absent. |
-| `POST` | `/api/remove-background` | Removes card image background via remove.bg. Requires `REMOVE_BG_API_KEY`. Returns 503 if key absent. |
+| Method | Path | Auth | Description |
+|---|---|---|---|
+| `POST` | `/api/tcgplayer/price` | Public, rate limited (30 per 10 min per client) | Live TCGPlayer price for the storefront. Body: `{ url }`, a `tcgplayer.com/product/<id>/...` URL. Returns `{ lowestPrice }` only. |
+| `GET` | `/api/scryfall/:id/price` | Admin | Scryfall price for a card UUID. |
+| `GET` | `/api/tcgplayer/price-check?id=<productId>` | Admin | Spot-check the TCGPlayer price and image for a product ID. |
+| `POST` | `/api/lookup/tcgplayer` | Admin | Full TCGPlayer lookup with enrichment (admin product form). Body: `{ url }`. |
+| `POST` | `/api/intel-report/restyle` | Admin | Calls Claude to restyle an intel report. Requires `ANTHROPIC_API_KEY`. Returns 503 if key absent. |
+| `POST` | `/api/remove-background` | Admin | Removes image background via remove.bg. Requires `REMOVE_BG_API_KEY`. Returns 503 if key absent. |
 
 ### Admin (requires `x-admin-key: <ADMIN_SECRET>` header)
 

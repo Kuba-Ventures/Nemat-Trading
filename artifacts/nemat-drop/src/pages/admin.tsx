@@ -571,7 +571,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     try {
       const res = await fetch(`${API_URL}/api/lookup/tcgplayer`, {
         method: "POST",
-        headers: { "Content-Type": "application/json" },
+        headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ url }),
       });
       const data = await res.json();
