@@ -1,15 +1,15 @@
 name: factory
 
 # Supervised PR factory. Two required checks:
-#   factory-tests  — typecheck gate (builds the shared libs and typechecks every
-#                    artifact) plus any package-level test suites that exist
-#                    (`pnpm -r test`, run only where a `test` script is present)
-#   factory-review — runs the vendored pr-reviewer agent and takes its verdict as
-#                    typed JSON (--json-schema), never as prose parsed out of a
-#                    comment. APPROVE-LOWRISK labels `auto-merge-eligible`;
-#                    ESCALATE labels `escalated`; anything else means the gate
-#                    itself failed, which labels `review-inconclusive` and fails
-#                    the check rather than quietly looking like a policy call.
+#   factory-tests:  typecheck gate (builds the shared libs and typechecks every
+#                   artifact) plus any package-level test suites that exist
+#                   (`pnpm -r test`, run only where a `test` script is present)
+#   factory-review: runs the vendored pr-reviewer agent and takes its verdict as
+#                   typed JSON (--json-schema), never as prose parsed out of a
+#                   comment. APPROVE-LOWRISK labels `auto-merge-eligible`;
+#                   ESCALATE labels `escalated`; anything else means the gate
+#                   itself failed, which labels `review-inconclusive` and fails
+#                   the check rather than quietly looking like a policy call.
 on:
   pull_request:
     types: [opened, synchronize, reopened, ready_for_review]
@@ -22,6 +22,7 @@ jobs:
   factory-tests:
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
       - uses: actions/checkout@v4
       - uses: pnpm/action-setup@v4
@@ -41,6 +42,7 @@ jobs:
     needs: factory-tests
     if: github.event.pull_request.draft == false
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     permissions:
       contents: write
       pull-requests: write
@@ -64,17 +66,17 @@ jobs:
             exit 1
           fi
 
-      # The verdict comes back as typed JSON via --json-schema, not as prose the
-      # workflow has to grep out of a comment. The previous version asked the agent
-      # to run `gh pr comment` and then parsed the comments for a VERDICT line; the
-      # agent never ran the command, so every PR parsed as "<none>" and fell into
-      # the escalate branch. A broken reviewer and a genuine risk finding were
-      # indistinguishable, and the Phase 2 soak measured nothing. See #81.
       # The reviewer cannot run on a PR that edits this workflow: the action
       # refuses with "Skipping action due to workflow validation", which is its
       # guard against a PR rewriting the gate that judges it. CLAUDE.md already
       # sends every CI change to a human, so short-circuit to that instead of
       # running a review that will come back empty and look like a broken gate.
+      #
+      # The changed-file list comes from git (the checkout is the PR's test merge
+      # commit, so HEAD^1 is the base) and is written to a file before anything
+      # reads it. The previous `gh pr diff | grep -q` pipeline treated any gh
+      # failure as "no workflow change", which failed open. --no-renames lists
+      # both sides of a move, so moving a file out of a guarded path still counts.
       - name: Classify change
         id: scope
         env:
@@ -95,7 +97,16 @@ jobs:
             gh pr edit "$PR" --remove-label "$l" 2>/dev/null || true
           done
 
-          if gh pr diff "$PR" --name-only | grep -qE '^\.github/workflows/'; then
+          git rev-parse --verify --quiet HEAD^2 >/dev/null || {
+            echo "::error::HEAD is not the PR's test merge commit; cannot list changed files."
+            exit 1
+          }
+          files="$RUNNER_TEMP/changed-files.txt"
+          git diff --no-renames --name-only HEAD^1 HEAD > "$files"
+          echo "Changed files ($(wc -l < "$files")):"
+          cat "$files"
+
+          if grep -qE '^\.github/workflows/' "$files"; then
             echo "ci_change=true" >> "$GITHUB_OUTPUT"
           else
             echo "ci_change=false" >> "$GITHUB_OUTPUT"
@@ -125,10 +136,17 @@ jobs:
       # agent never ran the command, so every PR parsed as "<none>" and fell into
       # the escalate branch. A broken reviewer and a genuine risk finding were
       # indistinguishable, and the Phase 2 soak measured nothing. See #81.
+      #
+      # Pinned to a commit, not the floating @v1 tag. On 2026-09-28 @v1 moved to
+      # v1.0.236 (Claude Code 2.1.284) and every review session errored in under
+      # 300 ms with no model usage, then recovered when @v1 moved again, with the
+      # same secret throughout. See #96. Bump this SHA in its own PR, on purpose.
+      # 97c53473 is v1.0.239 (Claude Code 2.1.287), last verified good on #101.
       - name: Factory review
         id: review
         if: steps.scope.outputs.ci_change == 'false'
-        uses: anthropics/claude-code-action@v1
+        timeout-minutes: 15
+        uses: anthropics/claude-code-action@97c53473391bff1901034d4b454b5bac7ab7a029 # v1.0.239
         with:
           claude_code_oauth_token: ${{ secrets.CLAUDE_CODE_OAUTH_TOKEN }}
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
@@ -136,10 +154,13 @@ jobs:
             You are running in CI for pull request #${{ github.event.pull_request.number }}
             in repo ${{ github.repository }}. The base branch is
             "${{ github.event.pull_request.base.ref }}" and the factory test gate
-            (typecheck) has already PASSED for this PR — treat tests as green.
+            (typecheck and tests) has already PASSED for this PR, so treat tests as green.
 
             Use the **pr-reviewer** subagent (defined in .claude/agents/pr-reviewer.md) to
-            review this PR against the merge policy in CLAUDE.md.
+            review this PR against the merge policy in CLAUDE.md. Run it in the
+            foreground and WAIT for it to return before you answer. Do not run it in
+            the background, and do not return your answer while it is still running.
+            Base the verdict on its review.
 
             Do NOT post a comment yourself. The workflow posts your review for you,
             so that a review always reaches the PR even if a tool call fails.
@@ -151,30 +172,59 @@ jobs:
             - reason: one concrete sentence. For ESCALATE, name the specific file or
               rule that triggered it.
             - review: the full review in markdown, for a human to read.
+            - reviewer_completed: true only if the pr-reviewer subagent returned its
+              review and the verdict is based on it. If it did not return, set this
+              to false and the verdict to "ESCALATE".
           claude_args: |
             --allowedTools "Read,Grep,Glob,Bash,Task"
             --max-turns 25
-            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVE-LOWRISK","ESCALATE"],"description":"The merge-policy verdict"},"reason":{"type":"string","description":"One concrete sentence justifying the verdict"},"review":{"type":"string","description":"Full review in markdown for a human reader"}},"required":["verdict","reason","review"]}'
+            --json-schema '{"type":"object","properties":{"verdict":{"type":"string","enum":["APPROVE-LOWRISK","ESCALATE"],"description":"The merge-policy verdict"},"reason":{"type":"string","description":"One concrete sentence justifying the verdict"},"review":{"type":"string","description":"Full review in markdown for a human reader"},"reviewer_completed":{"type":"boolean","description":"true only if the pr-reviewer subagent returned and the verdict is based on its review"}},"required":["verdict","reason","review","reviewer_completed"]}'
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
+      # Runs even when the review step failed. Before, a failed review step skipped
+      # this one, so #93-#99 got no label and no comment at all: the
+      # `review-inconclusive` path below never fired for the exact failure it
+      # exists for.
       - name: Post review and enforce verdict
-        if: steps.scope.outputs.ci_change == 'false'
+        if: ${{ !cancelled() && steps.scope.outputs.ci_change == 'false' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           PR: ${{ github.event.pull_request.number }}
           STRUCTURED: ${{ steps.review.outputs.structured_output }}
+          REVIEW_OUTCOME: ${{ steps.review.outcome }}
         run: |
           set -euo pipefail
 
+          # The action hides the session transcript, so a session that dies before
+          # its first turn leaves nothing to diagnose. Pull just the final result
+          # message (error flag, turns, cost, and the first 500 chars of its text).
+          session_summary() {
+            local f="$RUNNER_TEMP/claude-execution-output.json"
+            [ -f "$f" ] || { echo "no execution file was written"; return 0; }
+            jq -r '[.[]? | select(.type == "result")] | last
+                   | if . == null then "no result message in the execution file"
+                     else "is_error=\(.is_error) subtype=\(.subtype) turns=\(.num_turns) duration_ms=\(.duration_ms) cost_usd=\(.total_cost_usd) result=\((.result // "<none>") | tostring | .[0:500])"
+                     end' "$f" 2>/dev/null || echo "execution file could not be parsed"
+          }
+
           inconclusive() {
+            local detail
+            detail="Review step outcome: ${REVIEW_OUTCOME:-unknown}. Session: $(session_summary)"
             echo "::error::$1"
+            echo "$detail"
             gh pr edit "$PR" --add-label review-inconclusive
-            gh pr comment "$PR" --body "**Factory review did not return a verdict.** $1
+            gh pr comment "$PR" --body-file - <<EOF
+          **Factory review did not return a verdict.** $1
+
+          \`\`\`
+          $detail
+          \`\`\`
 
           This is a failure of the review gate itself, not a judgement about this PR.
           A human needs to review it directly, and the gate needs fixing before the
-          soak means anything. See #81."
+          soak means anything. See #81 and #96.
+          EOF
             exit 1
           }
 
@@ -188,30 +238,85 @@ jobs:
           verdict=$(printf '%s' "$STRUCTURED" | jq -r '.verdict // empty')
           reason=$(printf '%s' "$STRUCTURED" | jq -r '.reason // empty')
           review=$(printf '%s' "$STRUCTURED" | jq -r '.review // empty')
+          completed=$(printf '%s' "$STRUCTURED" | jq -r '.reviewer_completed // false')
 
           case "$verdict" in
             APPROVE-LOWRISK|ESCALATE) ;;
             *) inconclusive "Expected APPROVE-LOWRISK or ESCALATE, got '${verdict:-<empty>}'." ;;
           esac
 
+          # Backstops that can only turn an APPROVE-LOWRISK into an ESCALATE, never
+          # the reverse. The model's verdict alone is not enough to label a PR
+          # auto-merge-eligible.
+          override=""
+
+          # 1. The pr-reviewer subagent is the source of truth. On #90 and #100 the
+          #    session answered before it returned and judged the PR itself.
+          if [ "$verdict" = "APPROVE-LOWRISK" ] && [ "$completed" != "true" ]; then
+            override="the pr-reviewer subagent did not finish, so the approval did not come from it"
+          fi
+
+          # 2. Every changed file must sit inside a low-risk surface from CLAUDE.md.
+          #    Markdown that is the policy or the reviewer (CLAUDE.md, .claude/**)
+          #    does not count, or a PR could rewrite the rules that judge it.
+          lowrisk_path() {
+            case "$1" in
+              CLAUDE.md|*/CLAUDE.md|AGENTS.md|*/AGENTS.md|.claude/*|.github/*) return 1 ;;
+              artifacts/nemat-drop/src/components/*)
+                printf '%s' "$1" | grep -qiE 'checkout|payment|cart|pric|stripe|billing' && return 1
+                return 0 ;;
+              *.md) return 0 ;;
+              artifacts/nemat-drop/*.png|artifacts/nemat-drop/*.jpg|artifacts/nemat-drop/*.jpeg|\
+              artifacts/nemat-drop/*.gif|artifacts/nemat-drop/*.svg|artifacts/nemat-drop/*.webp|\
+              artifacts/nemat-drop/*.avif|artifacts/nemat-drop/*.ico|artifacts/nemat-drop/*.woff|\
+              artifacts/nemat-drop/*.woff2|artifacts/nemat-drop/*.ttf|artifacts/nemat-drop/*.otf)
+                return 0 ;;
+            esac
+            return 1
+          }
+          if [ "$verdict" = "APPROVE-LOWRISK" ] && [ -z "$override" ]; then
+            files="$RUNNER_TEMP/changed-files.txt"
+            if [ ! -s "$files" ]; then
+              override="the changed-file list was empty or missing, so the scope could not be checked"
+            else
+              outside=""
+              while IFS= read -r f; do
+                [ -n "$f" ] || continue
+                lowrisk_path "$f" || outside="$outside \`$f\`"
+              done < "$files"
+              if [ -n "$outside" ]; then
+                override="these files are outside the low-risk surfaces in CLAUDE.md:$outside"
+              fi
+            fi
+          fi
+
+          if [ -n "$override" ]; then
+            echo "::warning::Reviewer said APPROVE-LOWRISK; escalating because $override."
+            review="$review
+
+          > **Workflow override:** the reviewer returned APPROVE-LOWRISK, but $override. Escalated to a human."
+            reason="Overridden by the workflow: $override. (Reviewer said: $reason)"
+            verdict="ESCALATE"
+          fi
+
           # The workflow posts the review, so it is on the PR whether or not the
           # agent managed a tool call.
           {
             printf '%s\n\n---\n\n' "$review"
-            printf '**VERDICT: %s** — %s\n' "$verdict" "$reason"
+            printf '**VERDICT: %s**: %s\n' "$verdict" "$reason"
           } | gh pr comment "$PR" --body-file -
 
-          echo "Verdict: $verdict — $reason"
+          echo "Verdict: $verdict: $reason"
 
           if [ "$verdict" = "APPROVE-LOWRISK" ]; then
             # PHASE 2 (soak): observe-only. Label what the factory WOULD auto-merge,
             # but leave the merge to a human so we can watch for escapes.
-            echo "APPROVE-LOWRISK — Phase 2 soak: labeling, not merging."
+            echo "APPROVE-LOWRISK: Phase 2 soak, labeling, not merging."
             gh pr edit "$PR" --add-label auto-merge-eligible
             # PHASE 3: after a clean two-week soak, replace the label line above with:
             #   gh pr merge "$PR" --squash --auto
           else
-            echo "ESCALATE — routing to a human."
+            echo "ESCALATE: routing to a human."
             gh pr edit "$PR" --add-label escalated
             # Check stays green so a human can merge manually; do not auto-merge.
           fi
