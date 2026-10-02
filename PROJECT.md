@@ -1,13 +1,13 @@
 # Nemat / Tommy Top Decker Trading
 *MTG booster-pack drop storefront with honest pull odds and Stripe checkout.*
 
-*Last updated: 2026-10-02 12:39 ET by kuba-vault*
+*Last updated: 2026-10-02 17:15 ET by kuba-vault*
 
 ---
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. Since June it gained Resend order emails (sales alert plus a pack-themed customer confirmation), Meta click id and UTM attribution on every order, and Vitest in the frontend. Today #102 fixed the factory review gate by pinning the review action to a SHA, and #104 proved it with a real ESCALATE verdict, so issue #96 is closed. #104 also locked the card lookup routes behind the admin key and rate limited the one public price route. Next: confirm how Railway handles X-Forwarded-For, then surface attribution in the admin.
+Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. Since June it gained Resend order emails (sales alert plus a pack-themed customer confirmation), Meta click id and UTM attribution on every order, and Vitest in the frontend. Today #102 fixed the factory review gate by pinning the review action to a SHA, and #104 proved it with a real ESCALATE verdict, so issue #96 is closed. #104 also locked the card lookup routes behind the admin key and rate limited the one public price route. ROADMAP.md now dates every item and opens with a Timeline. Next: confirm how Railway handles X-Forwarded-For, then surface attribution in the admin.
 
 ---
 
@@ -33,7 +33,7 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 
 ## Where we are right now  [rewrite]
 
-The factory gate works again. #102 pinned `anthropics/claude-code-action` to the v1.0.239 SHA (`97c53473`) after the floating `@v1` tag broke it on 2026-09-28. #104 was the first code PR on the pinned SHA: it got a real verdict (ESCALATE, `is_error: false`, 3 turns), so #96 is closed. One catch: the reviewer reported `reviewer_completed: true` on #104 even though it only matched paths and never read the full diff. #104 also secured the lookup routes in `src/routes/scryfall.ts`: `/tcgplayer/debug` is gone, three routes need the admin key, and `POST /tcgplayer/price` stays public behind a rate limiter. #105 corrected ROADMAP.md's root cause for the outage. Next concrete step: confirm Railway appends to X-Forwarded-For rather than overwriting it, since the limiter depends on that. #93 to #99 still have no factory review.
+The factory gate works again. #102 pinned `anthropics/claude-code-action` to the v1.0.239 SHA (`97c53473`) after the floating `@v1` tag broke it on 2026-09-28. #104 was the first code PR on the pinned SHA: it got a real verdict (ESCALATE, `is_error: false`, 3 turns), so #96 is closed. One catch: the reviewer reported `reviewer_completed: true` on #104 even though it only matched paths and never read the full diff. #104 also secured the lookup routes in `src/routes/scryfall.ts`: `/tcgplayer/debug` is gone, three routes need the admin key, and `POST /tcgplayer/price` stays public behind a rate limiter. #105 corrected ROADMAP.md's root cause for the outage, and #107 marked #96 and #104 done there. #108 added Finley's "do it, don't tell me" and previews preferences to `CLAUDE.md`; the merge policy is unchanged. This run dated every ROADMAP.md item from PR merge and commit dates and added a Timeline back to the first commit (2026-03-13). Next concrete step: confirm Railway appends to X-Forwarded-For rather than overwriting it, since the limiter depends on that. #93 to #99 still have no factory review.
 
 ---
 
@@ -46,7 +46,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 - Pull odds as per-pack hit-rate bars (`src/components/PullProbabilityChart.tsx`) and an auto-managed Possible Pulls lineup (`src/components/PossiblePullsGrid.tsx`).
 - Rolling 10-day drop deadline, one countdown per screen, mobile purchase bar (#76, #77, #86).
 - Share card and page metadata (#82); contrast and form-label fixes (#80, #83).
-- GTM container with real Purchase value pushed to `dataLayer` on `/success` (`index.html`, #60).
+- GTM container `GTM-TVHXMXW5` (#18, confirmed in the live HTML on 2026-10-02) with real Purchase value pushed to `dataLayer` on `/success` (`index.html`, #60).
 - Attribution capture (`src/lib/attribution.ts`, #100): saves `fbclid` and `utm_*` on landing (last touch, 28 days) and sends them plus `_fbc`/`_fbp` with checkout.
 - Vitest suite (`vitest run`, jsdom) so frontend PRs can clear factory gate 3 (#98, #99).
 
@@ -67,7 +67,8 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 - pnpm monorepo (pnpm 10.33.0). Shared libs: `lib/db` (Drizzle + pg), `lib/api-zod`, `lib/api-client-react`, `lib/api-spec` (OpenAPI + Orval).
 - Supervised PR factory (`.github/workflows/factory.yml`, `.claude/agents/pr-reviewer.md`): low-risk paths can auto-merge, everything else escalates. Review action pinned to v1.0.239 SHA as of #102; first verdict on the pin landed on #104.
 - Google Ads MCP setup docs and scripts, local and Cloud Run (`docs/google-ads-mcp.md`, `scripts/setup-google-ads-mcp.sh`, `scripts/deploy-google-ads-mcp-cloudrun.sh`).
-- `ROADMAP.md` (#101) tracks staged work; cross-reference it for anything not covered here.
+- `ROADMAP.md` (#101, #105, #107) tracks staged work with a dated item on every line and a Timeline; cross-reference it for anything not covered here.
+- `CLAUDE.md` holds the merge policy, the owner's initiative and previews preferences (#108) and the shared standard block (no em dashes, `claude/<description>` branches).
 
 ---
 
@@ -134,7 +135,6 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 - [ ] Decide whether to retro-review #93 to #99, which were hand-merged on 2026-09-28 without a factory verdict. Owner: Finley
 - [ ] Return the attribution columns from `/admin/orders` and show them in the admin (ROADMAP Stage 2). Owner: Finley
 - [ ] Fix `README.md`: it still says Postgres runs on Railway, but the code targets Supabase. It also omits the Resend and Supabase env vars. #104 fixed only the route table. Owner: Finley
-- [ ] Refresh ROADMAP.md: Stage 3 says #96 stays open and Stage 4 calls #104 open; both are now done. Owner: Finley
 - [ ] Confirm "Re-lock pull odds" has run on production. PROJECT.md listed it as the last step in June and nothing in the repo records it. Waiting on: Finley
 - [ ] Pick the next drop after TMNT and a drop cadence. Waiting on: Finley
 
@@ -159,7 +159,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Links  [rewrite]
 
-- **Live URL:** https://tommytopdecker.com (Vercel, www-canonical)
+- **Live URL:** https://tommytopdecker.com (Vercel, www-canonical; redirects to `https://www.tommytopdecker.com/`, 200 on 2026-10-02)
 - **Staging:** (none yet)
 - **API host:** Railway (auto-deploys from master)
 - **Repo:** https://github.com/Kuba-Ventures/Nemat-Trading (public, default branch `master`, protected)
@@ -173,6 +173,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Changelog  [append-only, never rewrite or delete]
 
+- **2026-10-02:** Recorded #107 (ROADMAP.md marks #96 and #104 done, closing that open loop) and #108 (initiative and previews preferences in `CLAUDE.md`). Backfilled ROADMAP.md: a sourced date on all 23 items, a date range on every stage and a Timeline from the first commit (2026-03-13). Live check: storefront returns 200 and serves `GTM-TVHXMXW5`; API route checks were not run this time.
 - **2026-10-02:** Recorded #104 (lookup routes behind `requireAdmin`, `/tcgplayer/debug` removed, public price route rate limited and price-only) and #105 (ROADMAP root cause corrected). Closed out the #96 open loop: #104 got a real ESCALATE verdict on the pinned SHA. Added risks for `reviewer_completed` reporting true without a full diff read and for the per-process limiter. New open loop: confirm Railway's X-Forwarded-For behavior.
 - **2026-10-02:** Caught up from June. Recorded Resend order emails (#93 to #95), checkout phone fix (#97), Vitest in nemat-drop (#98, #99), Meta click id + UTM attribution on orders (#100), ROADMAP.md (#101), and the factory fix (#102): root cause was the floating `claude-code-action@v1` tag, not the OAuth token; now pinned to the v1.0.239 SHA. Flagged #93 to #99 as hand-merged without review, the public lookup routes, and the README vs code conflict on the DB host (code says Supabase). Swapped em dashes for other punctuation throughout, including older entries, per the house rule. Flag moved from shipping to on-track.
 - **2026-06-12:** Possible Pulls chase + everyday lineup (`a065659`): `buildPossiblePulls` now composes top-5 chase cards (any rarity) + 3 uncommons + 2 commons, value-ranked within rarity, with accurate per-card odds; the special rate now applies only to rare/mythic chase printings (borderless uncommons keep ~6.2%). New "Also in every pack" divider in `PossiblePullsGrid`; TMNT mock is now a 10-card lineup. Confirmed Railway auto-deploys from master (relock endpoint 401 live = new code present), correcting the "Railway deploys are manual" note. Noted: prod DB's TMNT product still has stale seed odds + empty possiblePulls; one "Re-lock pull odds" run will fix the live site.
