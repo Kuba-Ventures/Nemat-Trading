@@ -79,7 +79,11 @@ router.post("/checkout", async (req, res) => {
   const shippingLabel = `${rate.provider} ${rate.servicelevel.name}`;
 
   const stripe = new Stripe(stripeKey);
-  const frontendUrl = process.env.FRONTEND_URL ?? "http://localhost:5173";
+  // FRONTEND_URL can be a comma-separated CORS allowlist (see app.ts); Stripe
+  // needs a single base URL, so use the first entry (the primary domain).
+  const frontendUrl = (process.env.FRONTEND_URL ?? "http://localhost:5173")
+    .split(",")[0]
+    .trim();
 
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
