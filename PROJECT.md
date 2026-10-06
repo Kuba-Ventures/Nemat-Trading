@@ -7,7 +7,7 @@
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. Next: run one test checkout on prod to confirm #110, then surface attribution in the admin.
+Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. A prod test checkout the same day confirmed #110. Next: surface attribution in the admin.
 
 ---
 
@@ -26,14 +26,14 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 - **Engagement manager:** self-directed
 - **Lead:** Finley
 - **Cadence:** self-directed
-- **Next milestone:** a test checkout on prod confirms #110; then attribution columns in the admin (ROADMAP Stage 2, TBD)
+- **Next milestone:** attribution columns in the admin (ROADMAP Stage 2, TBD)
 - **Flags:** on-track
 
 ---
 
 ## Where we are right now  [rewrite]
 
-Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). Next concrete step: one test checkout on prod to confirm #110 end to end.
+Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). A prod test checkout the same day confirmed #110 end to end (Stripe session created, `cancel_url` returned to https://tommytopdecker.com/checkout?qty=1, nothing paid).
 
 ---
 
@@ -135,7 +135,6 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Open loops  [rewrite, but carry forward unfinished items]
 
-- [ ] Run a test checkout on prod to confirm #110. Owner: Finley
 - [ ] Confirm Railway appends to X-Forwarded-For rather than overwriting it (single proxy hop). The rate limiter keys on the rightmost entry and assumes Railway adds it. Owner: Finley
 - [ ] Decide whether to retro-review #93 to #99, which were hand-merged on 2026-09-28 without a factory verdict. Owner: Finley
 - [ ] Return the attribution columns from `/admin/orders` and show them in the admin (ROADMAP Stage 2). Owner: Finley
@@ -178,7 +177,7 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Changelog  [append-only, never rewrite or delete]
 
-- **2026-10-06:** Recorded the CORS outage and fix: `FRONTEND_URL` on Railway held only www while the site serves from apex, so the storefront showed a stale $32.00 fallback with no photo. Set it to apex + www and redeployed (config only). The comma-separated value then broke Stripe redirect URLs until #110 took the first entry; checkout was likely failing for about 30 minutes (unconfirmed). Updated the `FRONTEND_URL` docs in `README.md` and `.env.example`. Corrected Links: apex is primary, not www. Live check: TMNT still has empty `possiblePulls`.
+- **2026-10-06:** Recorded the CORS outage and fix: `FRONTEND_URL` on Railway held only www while the site serves from apex, so the storefront showed a stale $32.00 fallback with no photo. Set it to apex + www and redeployed (config only). The comma-separated value then broke Stripe redirect URLs until #110 took the first entry; checkout was likely failing for about 30 minutes (unconfirmed). Updated the `FRONTEND_URL` docs in `README.md` and `.env.example`. Corrected Links: apex is primary, not www. Live check: TMNT still has empty `possiblePulls`. Verified #110 on prod the same day with an end-to-end test checkout: ZIP 10001 loaded shipping rates (Ground Advantage $6.07, Priority $13.48, Express $49.98), Stripe Checkout showed TMNT $34.00 + $6.07 = $40.07, and Stripe's back arrow (`cancel_url`) returned to the single valid URL https://tommytopdecker.com/checkout?qty=1. Nothing was paid and no order was created.
 - **2026-10-02:** Recorded #107 (ROADMAP.md marks #96 and #104 done, closing that open loop) and #108 (initiative and previews preferences in `CLAUDE.md`). Backfilled ROADMAP.md: a sourced date on all 23 items, a date range on every stage and a Timeline from the first commit (2026-03-13). Live check: storefront returns 200 and serves `GTM-TVHXMXW5`; API route checks were not run this time.
 - **2026-10-02:** Recorded #104 (lookup routes behind `requireAdmin`, `/tcgplayer/debug` removed, public price route rate limited and price-only) and #105 (ROADMAP root cause corrected). Closed out the #96 open loop: #104 got a real ESCALATE verdict on the pinned SHA. Added risks for `reviewer_completed` reporting true without a full diff read and for the per-process limiter. New open loop: confirm Railway's X-Forwarded-For behavior.
 - **2026-10-02:** Caught up from June. Recorded Resend order emails (#93 to #95), checkout phone fix (#97), Vitest in nemat-drop (#98, #99), Meta click id + UTM attribution on orders (#100), ROADMAP.md (#101), and the factory fix (#102): root cause was the floating `claude-code-action@v1` tag, not the OAuth token; now pinned to the v1.0.239 SHA. Flagged #93 to #99 as hand-merged without review, the public lookup routes, and the README vs code conflict on the DB host (code says Supabase). Swapped em dashes for other punctuation throughout, including older entries, per the house rule. Flag moved from shipping to on-track.
