@@ -1,6 +1,6 @@
 # Tommy Top Decker Trading Roadmap: turn paid ad traffic into attributable, repeatable drops
 
-*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, every item dated · last verified against the code and merged PRs 2026-10-02*
+*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, 2026-10-06 CORS outage fixed (Railway `FRONTEND_URL` now apex + www, Stripe redirect fix in #110, prod test checkout pending), every item dated · last verified against the code and merged PRs 2026-10-06*
 
 ## What this is
 
@@ -32,14 +32,16 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - **2026-09-28** · Meta ad campaign started. Order emails via Resend went live (#93 to #95). The factory review broke the same day when the floating `claude-code-action@v1` tag moved (#96).
 - **2026-10-01** · Meta click id and UTM tags recorded on every order (#100).
 - **2026-10-02** · ROADMAP.md added (#101). Factory review pinned to a SHA (#102); its first real verdict on #104 closed #96. Admin lookup routes locked down and the public price route rate limited (#104).
+- **2026-10-06** · CORS outage: the API allowed only www while the site serves from apex, so the storefront showed a stale fallback product. Fixed by setting Railway `FRONTEND_URL` to apex + www; checkout then took only the first entry as its Stripe redirect base (#110).
 
-## Stage 0: Storefront and checkout (done, 2026-05-19 to 2026-08-07)
+## Stage 0: Storefront and checkout (done, 2026-05-19 to 2026-10-06)
 
 - [x] **2026-05-19** · **(build)** Product page, Shippo USPS quotes, Stripe Checkout with server-side rate re-validation (`src/routes/shipping.ts`, `src/routes/checkout.ts`).
 - [x] **2026-05-20** · **(build)** Stripe webhook writes orders to Postgres and the Orders sheet (`src/routes/webhooks.ts`, `src/lib/sheets.ts`).
 - [x] **2026-08-07** · **(build)** Max 2 per item per order, enforced server-side (`MAX_QUANTITY_PER_ORDER` in `src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#47).
 - [x] **2026-06-11** · **(build)** Customer accounts with order history via Supabase auth (`src/pages/account.tsx`, `src/lib/supabaseAuth.ts`; Kuba-Ventures/Nemat-Trading#9).
 - [x] **2026-06-12** · **(build)** Admin panel for products, orders, and waitlist, gated server-side by `x-admin-key` (`src/pages/admin.tsx`, `src/routes/products.ts`; Kuba-Ventures/Nemat-Trading#12).
+- [x] **2026-10-06** · **(build)** Storefront CORS allows apex and www (Railway `FRONTEND_URL`, config only), and Stripe return URLs use the first `FRONTEND_URL` entry (`src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#110). Prod test checkout still pending.
 
 ## Stage 1: Pull odds and drop mechanics (done, 2026-06-12 to 2026-09-28)
 
@@ -80,7 +82,7 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 
 - Does Railway append the client IP to `X-Forwarded-For` (as the #104 rate limiter assumes) or overwrite the header? If it overwrites, the limiter key needs to change.
 
-- Has "Re-lock pull odds" been run on production? PROJECT.md listed it as the one remaining step on 2026-06-12 and nothing in the repo records it.
+- ~~Has "Re-lock pull odds" been run on production?~~ Answered 2026-10-06: not for TMNT. The live product still has empty `possiblePulls` and tier rows with no percentages, so it still needs a run.
 - Where does Postgres actually live? `README.md` says Railway; `CLAUDE.md` and `PROJECT.md` say Supabase.
 - What is the next drop after the TMNT product, and is there a cadence for new drops?
 - Are Meta ads being attributed now that #100 is live, and what should the admin show?
