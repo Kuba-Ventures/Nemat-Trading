@@ -1,6 +1,6 @@
 # Tommy Top Decker Trading Roadmap: turn paid ad traffic into attributable, repeatable drops
 
-*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, 2026-10-06 CORS outage fixed (Railway `FRONTEND_URL` now apex + www, Stripe redirect fix in #110, prod test checkout pending), every item dated · last verified against the code and merged PRs 2026-10-06*
+*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, 2026-10-06 CORS outage fixed (Railway `FRONTEND_URL` now apex + www, Stripe redirect fix in #110, verified by a prod test checkout), every item dated · last verified against the code and merged PRs 2026-10-06*
 
 ## What this is
 
@@ -41,7 +41,7 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - [x] **2026-08-07** · **(build)** Max 2 per item per order, enforced server-side (`MAX_QUANTITY_PER_ORDER` in `src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#47).
 - [x] **2026-06-11** · **(build)** Customer accounts with order history via Supabase auth (`src/pages/account.tsx`, `src/lib/supabaseAuth.ts`; Kuba-Ventures/Nemat-Trading#9).
 - [x] **2026-06-12** · **(build)** Admin panel for products, orders, and waitlist, gated server-side by `x-admin-key` (`src/pages/admin.tsx`, `src/routes/products.ts`; Kuba-Ventures/Nemat-Trading#12).
-- [x] **2026-10-06** · **(build)** Storefront CORS allows apex and www (Railway `FRONTEND_URL`, config only), and Stripe return URLs use the first `FRONTEND_URL` entry (`src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#110). Prod test checkout still pending.
+- [x] **2026-10-06** · **(build)** Storefront CORS allows apex and www (Railway `FRONTEND_URL`, config only), and Stripe return URLs use the first `FRONTEND_URL` entry (`src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#110). Verified 2026-10-06 by a prod test checkout: Stripe's `cancel_url` returned to https://tommytopdecker.com/checkout?qty=1; nothing was paid.
 
 ## Stage 1: Pull odds and drop mechanics (done, 2026-06-12 to 2026-09-28)
 
