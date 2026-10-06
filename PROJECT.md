@@ -7,7 +7,7 @@
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. Next: run one test checkout on prod to confirm #110, then surface attribution in the admin.
+Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. A prod test checkout the same day confirmed #110. Next: surface attribution in the admin.
 
 ---
 
@@ -26,14 +26,14 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 - **Engagement manager:** self-directed
 - **Lead:** Finley
 - **Cadence:** self-directed
-- **Next milestone:** a test checkout on prod confirms #110; then attribution columns in the admin (ROADMAP Stage 2, TBD)
+- **Next milestone:** attribution columns in the admin (ROADMAP Stage 2, TBD)
 - **Flags:** on-track
 
 ---
 
 ## Where we are right now  [rewrite]
 
-Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). Next concrete step: one test checkout on prod to confirm #110 end to end.
+Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). A prod test checkout the same day confirmed #110 end to end (Stripe session created, `cancel_url` returned to https://tommytopdecker.com/checkout?qty=1, nothing paid).
 
 ---
 
