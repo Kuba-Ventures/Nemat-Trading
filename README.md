@@ -81,7 +81,7 @@ Set these in the Railway service's "Variables" panel.
 | `STRIPE_WEBHOOK_SECRET` | **Yes** | Signing secret for verifying incoming Stripe webhook events. Webhooks will be rejected without this. | Stripe dashboard → Developers → Webhooks → your endpoint → Signing secret |
 | `SHIPPO_API_TOKEN` | **Yes** | Authenticates requests to the Shippo API for USPS rate quotes and rate re-validation at checkout. | [goshippo.com](https://goshippo.com) → API |
 | `ADMIN_SECRET` | **Yes** | Arbitrary secret string checked via the `x-admin-key` request header on all `/api/admin/*` endpoints. Choose a strong random value. | Generate with `openssl rand -hex 32` |
-| `FRONTEND_URL` | **Yes** | The public URL of the frontend. Used to build Stripe's `success_url` and `cancel_url` redirects. | Your Vercel deployment URL, e.g. `https://tommytopdecker.com` |
+| `FRONTEND_URL` | **Yes** | Comma-separated list of frontend origins. Every entry goes into the API's CORS allowlist; the first entry is the base for Stripe's `success_url` and `cancel_url` redirects. List the primary domain first and include both apex and www, or browsers on the missing origin get CORS errors. | Your Vercel domains, e.g. `https://tommytopdecker.com,https://www.tommytopdecker.com` |
 | `SHEETS_WEBHOOK_URL` | Optional | Full URL of the deployed Google Apps Script web app. When set, new subscribers and completed orders are appended to the linked Google Sheet. Silently skipped if absent. | Deploy the Apps Script as a web app → copy the URL |
 | `SHEETS_WEBHOOK_SECRET` | Optional | Shared secret sent in the request body to the Apps Script endpoint for basic authentication. Must match the constant defined in the Apps Script source. | Choose a value and set the same value in the Apps Script |
 | `SHIPPING_ORIGIN_ZIP` | Optional | 5-digit US ZIP code used as the ship-from address for Shippo rate calculations. Defaults to `94303`. | Set to your actual fulfillment ZIP code |
@@ -113,7 +113,7 @@ These are not deployed — they only affect your local environment.
 |---|---|
 | `DATABASE_URL` | Connection string for your local Postgres database. Set this in your shell or a `.env` file that the api-server loads. |
 | `PORT` | Overrides the port the API server listens on (required — the server throws on startup without it). Use e.g. `3000`. |
-| `FRONTEND_URL` | Set to `http://localhost:5173` so Stripe success/cancel redirects land locally. |
+| `FRONTEND_URL` | Set to `http://localhost:5173` so CORS allows the local frontend and Stripe success/cancel redirects land locally. |
 
 ---
 

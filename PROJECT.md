@@ -1,13 +1,13 @@
 # Nemat / Tommy Top Decker Trading
 *MTG booster-pack drop storefront with honest pull odds and Stripe checkout.*
 
-*Last updated: 2026-10-02 17:15 ET by kuba-vault*
+*Last updated: 2026-10-06 13:35 ET by kuba-vault*
 
 ---
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. Since June it gained Resend order emails (sales alert plus a pack-themed customer confirmation), Meta click id and UTM attribution on every order, and Vitest in the frontend. Today #102 fixed the factory review gate by pinning the review action to a SHA, and #104 proved it with a real ESCALATE verdict, so issue #96 is closed. #104 also locked the card lookup routes behind the admin key and rate limited the one public price route. ROADMAP.md now dates every item and opens with a Timeline. Next: confirm how Railway handles X-Forwarded-For, then surface attribution in the admin.
+Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. Next: run one test checkout on prod to confirm #110, then surface attribution in the admin.
 
 ---
 
@@ -26,14 +26,14 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 - **Engagement manager:** self-directed
 - **Lead:** Finley
 - **Cadence:** self-directed
-- **Next milestone:** attribution columns visible in the admin (ROADMAP Stage 2, TBD)
+- **Next milestone:** a test checkout on prod confirms #110; then attribution columns in the admin (ROADMAP Stage 2, TBD)
 - **Flags:** on-track
 
 ---
 
 ## Where we are right now  [rewrite]
 
-The factory gate works again. #102 pinned `anthropics/claude-code-action` to the v1.0.239 SHA (`97c53473`) after the floating `@v1` tag broke it on 2026-09-28. #104 was the first code PR on the pinned SHA: it got a real verdict (ESCALATE, `is_error: false`, 3 turns), so #96 is closed. One catch: the reviewer reported `reviewer_completed: true` on #104 even though it only matched paths and never read the full diff. #104 also secured the lookup routes in `src/routes/scryfall.ts`: `/tcgplayer/debug` is gone, three routes need the admin key, and `POST /tcgplayer/price` stays public behind a rate limiter. #105 corrected ROADMAP.md's root cause for the outage, and #107 marked #96 and #104 done there. #108 added Finley's "do it, don't tell me" and previews preferences to `CLAUDE.md`; the merge policy is unchanged. This run dated every ROADMAP.md item from PR merge and commit dates and added a Timeline back to the first commit (2026-03-13). Next concrete step: confirm Railway appends to X-Forwarded-For rather than overwriting it, since the limiter depends on that. #93 to #99 still have no factory review.
+Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). Next concrete step: one test checkout on prod to confirm #110 end to end.
 
 ---
 
@@ -52,7 +52,8 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 **Backend / data** (`artifacts/api-server`, Express 5 + TS on Railway)
 - Routes: `account`, `checkout`, `orders`, `products`, `scryfall`, `shipping`, `subscribers`, `upload`, `webhooks`, `health`.
-- Max 2 per item per order, enforced server-side (`src/routes/checkout.ts`).
+- CORS allowlist from comma-separated `FRONTEND_URL` (`src/app.ts`). Production lists apex + www as of 2026-10-06.
+- Max 2 per item per order, enforced server-side (`src/routes/checkout.ts`). Stripe `success_url`/`cancel_url` use the first `FRONTEND_URL` entry (#110).
 - Order emails via Resend from the Stripe webhook (`src/lib/orderEmail.ts`, #93 to #95): a new-order alert to sales and an instant pack-themed confirmation to the buyer. Skipped if `RESEND_API_KEY` is unset.
 - Attribution (`src/lib/attribution.ts`, #100): checkout whitelists and caps the keys, stores them in Stripe metadata (`attr_` prefix), and the webhook copies them to 9 new nullable columns on `orders`. The order APIs don't return them yet.
 - Pull-odds model and Possible Pulls selector in `src/routes/scryfall.ts`; `POST /api/admin/products/relock-pulls` backfill in `src/routes/products.ts`.
@@ -64,6 +65,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 - Tests: `tsx --test` (attribution, drop window, order email, TCG pricing, lookup route auth and validation, rate limiter).
 
 **Infrastructure**
+- Vercel serves the frontend from the apex domain; `www` 308-redirects to apex (checked 2026-10-06). Railway project "Tommy Top Decker Trading Co", api-server service at https://workspaceapi-server-production-c93f.up.railway.app.
 - pnpm monorepo (pnpm 10.33.0). Shared libs: `lib/db` (Drizzle + pg), `lib/api-zod`, `lib/api-client-react`, `lib/api-spec` (OpenAPI + Orval).
 - Supervised PR factory (`.github/workflows/factory.yml`, `.claude/agents/pr-reviewer.md`): low-risk paths can auto-merge, everything else escalates. Review action pinned to v1.0.239 SHA as of #102; first verdict on the pin landed on #104.
 - Google Ads MCP setup docs and scripts, local and Cloud Run (`docs/google-ads-mcp.md`, `scripts/setup-google-ads-mcp.sh`, `scripts/deploy-google-ads-mcp-cloudrun.sh`).
@@ -111,6 +113,8 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Decisions log  [append-only, never rewrite or delete]
 
+- **2026-10-06, First FRONTEND_URL entry is the Stripe redirect base**. One variable now serves both CORS and Stripe; #110 splits it and uses the first entry, so the primary domain goes first. Chose this over adding a second variable to keep Railway config to one value.
+- **2026-10-06, FRONTEND_URL on Railway must list apex and www**. The site serves from apex and www redirects there, so the API's CORS allowlist needs both. If the Vercel primary domain ever changes, update `FRONTEND_URL` the same day. Symptom of a miss: a CORS error in the console and the fallback product with no image. Fixed by config, since `app.ts` already splits a comma-separated list.
 - **2026-10-02, Rate limit the public price route in process, keyed on the rightmost X-Forwarded-For**. `trust proxy: true` makes `req.ip` the leftmost, client-controlled entry, so keying on it lets anyone dodge the limit. Chose a small in-memory limiter over adding `express-rate-limit` or Redis; it fits the single Railway service but resets on deploy and would multiply with replicas.
 - **2026-10-02, Gate lookup routes with the existing admin key, keep one public price route**. Reused `requireAdmin` rather than a new auth scheme. `POST /tcgplayer/price` stays public because the logged-out storefront calls it; it gets URL validation, a server-built upstream URL and a price-only response instead of auth. Removed `/tcgplayer/debug` outright since nothing called it.
 - **2026-10-02, Pin the factory review action to a SHA**. The floating `@v1` tag broke the gate on 2026-09-28 with no change in this repo. Pinned to `97c53473` (v1.0.239); bumps go in their own PR. Rejected rotating the OAuth token, since evidence showed the token never failed.
@@ -131,11 +135,12 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Open loops  [rewrite, but carry forward unfinished items]
 
+- [ ] Run a test checkout on prod to confirm #110. Owner: Finley
 - [ ] Confirm Railway appends to X-Forwarded-For rather than overwriting it (single proxy hop). The rate limiter keys on the rightmost entry and assumes Railway adds it. Owner: Finley
 - [ ] Decide whether to retro-review #93 to #99, which were hand-merged on 2026-09-28 without a factory verdict. Owner: Finley
 - [ ] Return the attribution columns from `/admin/orders` and show them in the admin (ROADMAP Stage 2). Owner: Finley
-- [ ] Fix `README.md`: it still says Postgres runs on Railway, but the code targets Supabase. It also omits the Resend and Supabase env vars. #104 fixed only the route table. Owner: Finley
-- [ ] Confirm "Re-lock pull odds" has run on production. PROJECT.md listed it as the last step in June and nothing in the repo records it. Waiting on: Finley
+- [ ] Fix `README.md`: it still says Postgres runs on Railway, but the code targets Supabase. It also omits the Resend and Supabase env vars. #104 fixed the route table and this run fixed the `FRONTEND_URL` row. Owner: Finley
+- [ ] Run "Re-lock pull odds" on production for TMNT. Checked 2026-10-06: the live TMNT product still has empty `possiblePulls` and tier rows with no percentages. Owner: Finley
 - [ ] Pick the next drop after TMNT and a drop cadence. Waiting on: Finley
 
 ---
@@ -151,7 +156,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 - **Admin password is client-side.** `VITE_ADMIN_PASSWORD` ships in the browser bundle; real protection is `ADMIN_SECRET` on the server.
 - **Ephemeral uploads.** Server-side uploads land on Railway's local disk and vanish on redeploy; Cloudinary is optional.
 - **Special-printing odds are approximate.** One stated special rate covers all rare/mythic special treatments.
-- **CORS / FRONTEND_URL gotcha.** Multi-origin CORS is comma-separated `FRONTEND_URL`; a misconfiguration caused a prior incident. Domain is www-canonical.
+- **FRONTEND_URL is tied to the Vercel domains.** It feeds the CORS allowlist (all entries) and the Stripe redirect base (first entry). Changing the primary domain on Vercel without updating Railway breaks every API call from the site; this caused the 2026-10-06 outage. Apex is primary, not www.
 - **Mac dev friction.** `pnpm-workspace.yaml` strips non-Linux native binaries, so frontend tests and dev need a temporary darwin override. The API won't boot locally without a real `DATABASE_URL`.
 - **`.env.example` secret hygiene.** Real production secrets have been pasted into `.env.example` before, and the repo is public. Check it whenever env vars change.
 
@@ -159,9 +164,9 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Links  [rewrite]
 
-- **Live URL:** https://tommytopdecker.com (Vercel, www-canonical; redirects to `https://www.tommytopdecker.com/`, 200 on 2026-10-02)
+- **Live URL:** https://tommytopdecker.com (Vercel, apex is primary; `www` 308-redirects to apex, checked 2026-10-06)
 - **Staging:** (none yet)
-- **API host:** Railway (auto-deploys from master)
+- **API host:** https://workspaceapi-server-production-c93f.up.railway.app (Railway project "Tommy Top Decker Trading Co", auto-deploys from master)
 - **Repo:** https://github.com/Kuba-Ventures/Nemat-Trading (public, default branch `master`, protected)
 - **Roadmap:** `ROADMAP.md`
 - **Factory issue (closed):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/96
@@ -173,6 +178,7 @@ The factory gate works again. #102 pinned `anthropics/claude-code-action` to the
 
 ## Changelog  [append-only, never rewrite or delete]
 
+- **2026-10-06:** Recorded the CORS outage and fix: `FRONTEND_URL` on Railway held only www while the site serves from apex, so the storefront showed a stale $32.00 fallback with no photo. Set it to apex + www and redeployed (config only). The comma-separated value then broke Stripe redirect URLs until #110 took the first entry; checkout was likely failing for about 30 minutes (unconfirmed). Updated the `FRONTEND_URL` docs in `README.md` and `.env.example`. Corrected Links: apex is primary, not www. Live check: TMNT still has empty `possiblePulls`.
 - **2026-10-02:** Recorded #107 (ROADMAP.md marks #96 and #104 done, closing that open loop) and #108 (initiative and previews preferences in `CLAUDE.md`). Backfilled ROADMAP.md: a sourced date on all 23 items, a date range on every stage and a Timeline from the first commit (2026-03-13). Live check: storefront returns 200 and serves `GTM-TVHXMXW5`; API route checks were not run this time.
 - **2026-10-02:** Recorded #104 (lookup routes behind `requireAdmin`, `/tcgplayer/debug` removed, public price route rate limited and price-only) and #105 (ROADMAP root cause corrected). Closed out the #96 open loop: #104 got a real ESCALATE verdict on the pinned SHA. Added risks for `reviewer_completed` reporting true without a full diff read and for the per-process limiter. New open loop: confirm Railway's X-Forwarded-For behavior.
 - **2026-10-02:** Caught up from June. Recorded Resend order emails (#93 to #95), checkout phone fix (#97), Vitest in nemat-drop (#98, #99), Meta click id + UTM attribution on orders (#100), ROADMAP.md (#101), and the factory fix (#102): root cause was the floating `claude-code-action@v1` tag, not the OAuth token; now pinned to the v1.0.239 SHA. Flagged #93 to #99 as hand-merged without review, the public lookup routes, and the README vs code conflict on the DB host (code says Supabase). Swapped em dashes for other punctuation throughout, including older entries, per the house rule. Flag moved from shipping to on-track.
