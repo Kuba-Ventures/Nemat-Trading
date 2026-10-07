@@ -88,6 +88,9 @@ router.post("/checkout", async (req, res) => {
   const session = await stripe.checkout.sessions.create({
     mode: "payment",
     automatic_tax: { enabled: true },
+    // Lets buyers enter a Stripe promotion code (e.g. the thank-you insert's
+    // repeat-order code). Codes, amounts and limits are managed in Stripe.
+    allow_promotion_codes: true,
     line_items: [
       {
         quantity,

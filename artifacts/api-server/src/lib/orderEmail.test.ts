@@ -122,3 +122,18 @@ test("confirmation escapes admin- and customer-supplied fields", () => {
   assert.ok(!html.includes("<b>x</b>"));
   assert.ok(!html.includes("<script>"));
 });
+
+test("a promotion code discount shows in both emails so the lines add up to the total", () => {
+  const discounted = { ...ORDER, discount: "3.40", total: "36.67" };
+  for (const { text, html } of [buildOrderEmail(discounted), buildConfirmationEmail(discounted, null)]) {
+    assert.ok(text.includes("Discount") && text.includes("-") && text.includes("3.40"), "text missing discount");
+    assert.ok(html.includes("Discount") && html.includes("3.40"), "html missing discount");
+  }
+});
+
+test("no discount line when no promotion code was used", () => {
+  for (const o of [ORDER, { ...ORDER, discount: "0.00" }]) {
+    assert.ok(!buildOrderEmail(o).text.includes("Discount"));
+    assert.ok(!buildConfirmationEmail(o, null).text.includes("Discount"));
+  }
+});
