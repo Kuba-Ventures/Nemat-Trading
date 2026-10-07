@@ -1,10 +1,10 @@
 # Tommy Top Decker Trading Roadmap: turn paid ad traffic into attributable, repeatable drops
 
-*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, 2026-10-06 CORS outage fixed (Railway `FRONTEND_URL` now apex + www, Stripe redirect fix in #110, verified by a prod test checkout), every item dated · last verified against the code and merged PRs 2026-10-06*
+*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders, ad attribution just shipped, review gate fixed and verified, lookup routes secured, 2026-10-06 CORS outage fixed (Railway `FRONTEND_URL` now apex + www, Stripe redirect fix in #110, verified by a prod test checkout), brand guide merged (#115), thank-you insert options out for Shawn's review, promotion codes accepted at checkout (#114, coupon not yet created), Shippo auto-labels blocked on owner inputs (#113), every item dated · last verified against the code, PRs and issues 2026-10-07*
 
 ## What this is
 
-Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster-pack drop storefront at tommytopdecker.com for collectors buying one featured product at a time. Buyers see derived pull odds, get live USPS shipping quotes, and pay with Stripe Checkout. The frontend is Vite + React on Vercel (`artifacts/nemat-drop`), the API is Express 5 on Railway (`artifacts/api-server`), and data lives in Postgres via Drizzle (`lib/db`), with orders and signups mirrored to a Google Sheet.
+Tommy Top Decker Trading (repo: Nemat-Trading) is a sealed trading card pack drop storefront at tommytopdecker.com for collectors buying one featured product at a time. Inventory is MTG today; the brand stays game-neutral (Tommy Top Decker TCG) and Pokemon may follow. Buyers see derived pull odds, get live USPS shipping quotes, and pay with Stripe Checkout. The frontend is Vite + React on Vercel (`artifacts/nemat-drop`), the API is Express 5 on Railway (`artifacts/api-server`), and data lives in Postgres via Drizzle (`lib/db`), with orders and signups mirrored to a Google Sheet.
 
 ### Status legend
 
@@ -32,7 +32,9 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - **2026-09-28** · Meta ad campaign started. Order emails via Resend went live (#93 to #95). The factory review broke the same day when the floating `claude-code-action@v1` tag moved (#96).
 - **2026-10-01** · Meta click id and UTM tags recorded on every order (#100).
 - **2026-10-02** · ROADMAP.md added (#101). Factory review pinned to a SHA (#102); its first real verdict on #104 closed #96. Admin lookup routes locked down and the public price route rate limited (#104).
+- **2026-10-01** · Check-in with Shawn: the brand stays Tommy Top Decker TCG, not one game. Action items: thank-you cards with a 10% coupon, and order management and packing slips.
 - **2026-10-06** · CORS outage: the API allowed only www while the site serves from apex, so the storefront showed a stale fallback product. Fixed by setting Railway `FRONTEND_URL` to apex + www; checkout then took only the first entry as its Stripe redirect base (#110).
+- **2026-10-07** · Brand guide merged (#115) and three thank-you insert options emailed to Shawn. Stripe promotion codes enabled at checkout (#114). Opened #113 (Shippo auto-labels, chosen over Pirate Ship).
 
 ## Stage 0: Storefront and checkout (done, 2026-05-19 to 2026-10-06)
 
@@ -58,6 +60,12 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - [x] **2026-08-12** · **(growth)** GTM container with real Purchase value pushed to `dataLayer` on `/success` (`index.html`, Kuba-Ventures/Nemat-Trading#60). The direct Meta Pixel + CAPI code was added and then reverted (Kuba-Ventures/Nemat-Trading#58, #59).
 - [x] **2026-10-01** · **(growth)** Capture `fbclid`, `_fbc`/`_fbp`, and `utm_*` on landing and store them on each order (`src/lib/attribution.ts` in both apps; Kuba-Ventures/Nemat-Trading#100).
 - [ ] **added 2026-10-02** · **(growth)** Surface attribution in the admin. The order APIs do not return the new columns yet (per #100).
+- [x] **2026-10-07** · **(design)** Brand guide: 11-page visual identity on the TT card mark palette, game-neutral copy, "Sealed packs. Under market." positioning (`docs/brand-guide`; Kuba-Ventures/Nemat-Trading#115).
+- [~] **started 2026-10-07** · **(growth)** Thank-you insert with a 10% return code and a UTM-tagged QR (`utm_source=insert`), from the 2026-10-01 check-in. Three formats emailed to Shawn 2026-10-07; waiting on his format, code name, discount % and limits.
+- [x] **2026-10-07** · **(build)** Accept Stripe promotion codes at checkout and show the discount in both order emails (`src/routes/checkout.ts`; Kuba-Ventures/Nemat-Trading#114).
+- [ ] **added 2026-10-07** · **(growth)** Create the coupon and promotion code in Stripe once Shawn confirms the code name, % and limits, then place a test order.
+- [ ] **added 2026-10-07** · **(build)** Auto-buy USPS labels via Shippo and attach the label plus a branded packing slip to the sales@ order email; email customers tracking (Kuba-Ventures/Nemat-Trading#113). Blocked on owner OK for automatic postage, the full origin address and real parcel size and weight.
+- [ ] **added 2026-10-07** · **(build)** Check the shipping quote weight: 0.7 oz per unit in a 6 x 4 x 1 in parcel (`PRODUCT_WEIGHT_OZ`, `src/routes/shipping.ts`) may under-quote a padded mailer plus insert. Unconfirmed.
 - [x] **2026-08-26** · **(build)** Google Ads MCP setup docs and scripts, local and Cloud Run (`docs/google-ads-mcp.md`, `scripts/setup-google-ads-mcp.sh`, `scripts/deploy-google-ads-mcp-cloudrun.sh`; Kuba-Ventures/Nemat-Trading#61 to #64).
 
 ## Stage 3: Keep the factory working (done, 2026-09-28 to 2026-10-02)
@@ -86,4 +94,6 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a Magic: The Gathering booster
 - Where does Postgres actually live? `README.md` says Railway; `CLAUDE.md` and `PROJECT.md` say Supabase.
 - What is the next drop after the TMNT product, and is there a cadence for new drops?
 - Are Meta ads being attributed now that #100 is live, and what should the admin show?
+- Which thank-you insert format (1 trading card, 2 postcard, 3 sealed fold), what code name, what discount % and what limits? Waiting on Shawn (emailed 2026-10-07).
+- Will Shawn OK automatic USPS postage purchase on every order (#113), and what is the full origin address and packed parcel size and weight?
 - ~~Should the factory pin `anthropics/claude-code-action` to a version instead of the floating `@v1` tag?~~ Answered: yes, pinned to the v1.0.239 SHA in Kuba-Ventures/Nemat-Trading#102.
