@@ -1,13 +1,13 @@
 # Nemat / Tommy Top Decker Trading
-*MTG booster-pack drop storefront with honest pull odds and Stripe checkout.*
+*Sealed trading card pack drops, under market, with honest pull odds.*
 
-*Last updated: 2026-10-06 13:35 ET by kuba-vault*
+*Last updated: 2026-10-07 15:20 ET by kuba-vault*
 
 ---
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live and taking orders from a Meta ad campaign that started 2026-09-28. On 2026-10-06 a CORS outage hit production: the API allowed only the www origin, the site serves from apex, so the storefront fell back to a stale $32.00 product with no photo. Setting Railway `FRONTEND_URL` to apex + www fixed the storefront, and #110 then made checkout use only the first entry as the Stripe redirect base. A prod test checkout the same day confirmed #110. Next: surface attribution in the admin.
+Tommy Top Decker Trading sells one sealed-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live, fed by a Meta campaign on a $500/month budget since 2026-09-28; the 2026-10-06 CORS outage is fixed and verified. On 2026-10-07 Finley shipped an 11-page brand guide (#115), designed three thank-you insert formats with a 10% return code and emailed the options to Shawn, merged #114 so Stripe Checkout accepts promotion codes, and opened #113 for auto-bought Shippo labels. Next: Shawn picks the insert format and code terms, then the coupon and promotion code go live in Stripe and a test order confirms them.
 
 ---
 
@@ -15,8 +15,8 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 
 **The problem:** Buyers of MTG booster packs can't see real odds of pulling a given rarity or card; sellers either omit odds or make them up.
 **The solution:** A drop storefront that shows pull probabilities derived from pack contents and live Scryfall data, with live shipping quotes and Stripe checkout.
-**The user:** MTG collectors buying single curated booster-pack drops.
-**The value:** Sourced odds plus a clean buy-and-ship flow, one featured product at a time.
+**The user:** Collectors buying sealed trading card packs, one curated drop at a time. Today that's MTG; Pokemon inventory may follow (Shawn, 2026-10-01).
+**The value:** Sealed packs under market price, sourced odds and a clean buy-and-ship flow. Brand line: "Sealed packs. Under market."
 
 ---
 
@@ -24,16 +24,16 @@ Tommy Top Decker Trading sells one MTG booster-pack drop at a time at tommytopde
 
 - **Phase:** live (post-MVP iteration)
 - **Engagement manager:** self-directed
-- **Lead:** Finley
-- **Cadence:** self-directed
-- **Next milestone:** attribution columns in the admin (ROADMAP Stage 2, TBD)
+- **Lead:** Finley (build); Shawn (owner); Lauren (books)
+- **Cadence:** check-ins with Shawn (last 2026-10-01) plus email
+- **Next milestone:** thank-you insert and 10% return code live (checkout accepts codes since #114; waiting on Shawn's format and code choices; no date set)
 - **Flags:** on-track
 
 ---
 
 ## Where we are right now  [rewrite]
 
-Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo was missing and the page showed a stale fallback price ($32.00, not the live $34.00), with no TCG Low price, savings % or countdown. Cause: CORS. Vercel serves the site from the apex domain and www 308-redirects to apex, but the Railway API built its `cors` allowlist (`artifacts/api-server/src/app.ts`) from `FRONTEND_URL`, which held only `https://www.tommytopdecker.com`. The browser blocked `GET /api/products`, so the frontend fell back to hardcoded data; checkout and every other API call from the site failed the same way. Likely trigger: the Vercel primary domain moved from www to apex and nobody updated Railway. Fix: `FRONTEND_URL=https://tommytopdecker.com,https://www.tommytopdecker.com` on the api-server service, then a redeploy. Verified: the API returns `access-control-allow-origin` for both origins, and the live page shows the pack photo, $34.00, TCG Low $40.86, 16.79% savings and the countdown. The comma-separated value then broke Stripe's redirect URLs, because `checkout.ts` used it unsplit. #110 (merged 2026-10-06 13:34 ET, 55/55 tests) takes the first entry. Checkout was likely failing for about 30 minutes in between (unconfirmed). A prod test checkout the same day confirmed #110 end to end (Stripe session created, `cancel_url` returned to https://tommytopdecker.com/checkout?qty=1, nothing paid).
+Working through the 2026-10-01 check-in action items. Built the brand guide: 11 pages covering logo, color, type and voice, in `docs/brand-guide` with PDF exports (#115, merged 2026-10-07). It keeps the warm palette from the existing TT card mark and leads on under-market pricing. Copy stays game-neutral because Shawn wants the brand to be Tommy Top Decker TCG, not one game. For the "business cards with a 10% coupon" item, designed three thank-you inserts: (1) trading card, 2.5 x 3.5 in; (2) postcard, 6 x 4 in; (3) sealed fold, 3.5 x 5 in folded. Each has a packer signature line, a 10% return code (TOPDECK10 is a placeholder) and a UTM-tagged QR. Emailed the options PDF to Shawn on 2026-10-07; waiting on his format choice, code name, discount % and limits. #114 (merged 2026-10-07 at the owner's request) lets Stripe Checkout take promotion codes and shows the discount in both order emails (57/57 tests, typecheck clean). No coupon exists in Stripe yet; it gets created once Shawn confirms the terms. Opened #113 to auto-buy USPS labels through Shippo; it's blocked on owner OK for automatic postage, the full origin address and real parcel size and weight. Meta ads are running at about $21.35/day and stay untouched for a couple of weeks.
 
 ---
 
@@ -56,6 +56,7 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 - Max 2 per item per order, enforced server-side (`src/routes/checkout.ts`). Stripe `success_url`/`cancel_url` use the first `FRONTEND_URL` entry (#110).
 - Order emails via Resend from the Stripe webhook (`src/lib/orderEmail.ts`, #93 to #95): a new-order alert to sales and an instant pack-themed confirmation to the buyer. Skipped if `RESEND_API_KEY` is unset.
 - Attribution (`src/lib/attribution.ts`, #100): checkout whitelists and caps the keys, stores them in Stripe metadata (`attr_` prefix), and the webhook copies them to 9 new nullable columns on `orders`. The order APIs don't return them yet.
+- Shipping quotes (`src/routes/shipping.ts`): Shippo USPS rates for a 6 x 4 x 1 in parcel at `PRODUCT_WEIGHT_OZ` per unit (default 0.7 oz), from `SHIPPING_ORIGIN_ZIP`. Labels are bought by hand today; #113 proposes auto-buying them.
 - Pull-odds model and Possible Pulls selector in `src/routes/scryfall.ts`; `POST /api/admin/products/relock-pulls` backfill in `src/routes/products.ts`.
 - Lookup routes secured (#104, `src/routes/scryfall.ts`): `/tcgplayer/debug` removed. `POST /lookup/tcgplayer` (admin form, one Anthropic call per lookup), `GET /scryfall/:id/price` and `GET /tcgplayer/price-check` use the existing `requireAdmin` check (`x-admin-key` against `ADMIN_SECRET`) plus input validation.
 - Public `POST /tcgplayer/price` for the storefront (#104): accepts only `tcgplayer.com/product/<id>` URLs, builds the upstream URL from the id, and returns only `{ lowestPrice }`. Limited to 30 calls per 10 min per client by an in-memory fixed-window limiter (`src/lib/rate-limit.ts`) keyed on the rightmost X-Forwarded-For entry.
@@ -63,6 +64,15 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 - Google Sheets sync via Apps Script (`src/lib/sheets.ts`, `apps-script/`).
 - Schema changes as idempotent `ALTER TABLE` in the bootstrap (`src/index.ts`), which also enables RLS on all tables to block Supabase's public Data API.
 - Tests: `tsx --test` (attribution, drop window, order email, TCG pricing, lookup route auth and validation, rate limiter).
+
+**Brand and print**
+- Brand guide, 11 pages: cover, foundation, primary logo, secondary marks, misuse, color, typography, iconography, applications, thank-you insert, voice and tone. Source and PDF exports in `docs/brand-guide` (#115, merged 2026-10-07).
+- Palette from the TT card mark: charcoal #2B2B30 (default ground), cream #F5F0E6, gold #C9A961, pip red #B03A3A. Type: Gotham Black (name and headlines, caps only), JetBrains Mono (prices and numbers), Inter (body).
+- Positioning: "Sealed packs. Under market." Principles: Under market, One drop at a time, Packed like it matters. Copy says "sealed trading card packs", not a specific game.
+- Thank-you insert in three formats: (1) trading card 2.5 x 3.5 in, (2) postcard 6 x 4 in, (3) sealed fold 3.5 x 5 in folded. Each has a packer signature line, a 10% return code (TOPDECK10 placeholder) and a QR to `https://tommytopdecker.com/?utm_source=insert&utm_medium=print&utm_campaign=thankyou`, so repeat orders land in the #100 attribution.
+
+**Discounts** (#114, merged 2026-10-07; Railway auto-deploys master)
+- `allow_promotion_codes` on the Stripe Checkout session (`src/routes/checkout.ts`). The webhook passes `total_details.amount_discount` to the sales@ alert and the customer confirmation, which show a Discount line; the tax-rate fallback uses the discounted base. The orders table and Sheet still store the pre-discount line subtotal (no schema change). 57/57 tests, typecheck clean. No coupon or promotion code exists in Stripe yet.
 
 **Infrastructure**
 - Vercel serves the frontend from the apex domain; `www` 308-redirects to apex (checked 2026-10-06). Railway project "Tommy Top Decker Trading Co", api-server service at https://workspaceapi-server-production-c93f.up.railway.app.
@@ -96,7 +106,7 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 | Integration | Purpose | Cost | Status |
 |---|---|---|---|
 | Stripe | Checkout + webhooks | usage-based | live |
-| Shippo | USPS shipping rates | usage-based | live |
+| Shippo | USPS shipping rates; label purchase proposed in #113 | usage-based | live (rates), planned (labels) |
 | Resend | Order alert + customer confirmation emails | unknown | live |
 | Supabase | Postgres + customer auth | unknown | live |
 | Google Apps Script | Append orders and signups to a Sheet | free | live |
@@ -113,6 +123,11 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Decisions log  [append-only, never rewrite or delete]
 
+- **2026-10-07, Auto-buy labels through Shippo (Option C, #113)**. Buy the USPS label per order through the Shippo API and attach it plus a branded packing slip to the sales@ email, then email the customer tracking. Rejected a Pirate Ship spreadsheet flow (no Stripe integration and no public API we could find) and the Shippo web app (still manual). Not built: needs the owner's OK for automatic postage spend.
+- **2026-10-07, Discounts via Stripe promotion codes, no schema change (#114)**. Checkout accepts Stripe promotion codes and the emails show the discount. The orders table and Sheet keep the pre-discount line subtotal for now, to avoid a migration.
+- **2026-10-07, Print inserts carry a UTM-tagged QR**. The insert QR uses `utm_source=insert&utm_medium=print&utm_campaign=thankyou`, so repeat orders show up in the existing #100 attribution with no new tracking code.
+- **2026-10-07, Brand guide keeps the TT card mark palette and leads on price**. Built the identity on the existing card mark's warm colors with charcoal as the default ground, and led positioning on under-market pricing ("Sealed packs. Under market.").
+- **2026-10-01, Brand stays Tommy Top Decker, game-neutral**. Shawn said at the check-in that the brand is Tommy Top Decker TCG, not a specific game; Pokemon inventory may follow in a month or two. Public copy says "sealed trading card packs". Nemat stays an internal name only.
 - **2026-10-06, First FRONTEND_URL entry is the Stripe redirect base**. One variable now serves both CORS and Stripe; #110 splits it and uses the first entry, so the primary domain goes first. Chose this over adding a second variable to keep Railway config to one value.
 - **2026-10-06, FRONTEND_URL on Railway must list apex and www**. The site serves from apex and www redirects there, so the API's CORS allowlist needs both. If the Vercel primary domain ever changes, update `FRONTEND_URL` the same day. Symptom of a miss: a CORS error in the console and the fallback product with no image. Fixed by config, since `app.ts` already splits a comma-separated list.
 - **2026-10-02, Rate limit the public price route in process, keyed on the rightmost X-Forwarded-For**. `trust proxy: true` makes `req.ip` the leftmost, client-controlled entry, so keying on it lets anyone dodge the limit. Chose a small in-memory limiter over adding `express-rate-limit` or Redis; it fits the single Railway service but resets on deploy and would multiply with replicas.
@@ -135,6 +150,16 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Open loops  [rewrite, but carry forward unfinished items]
 
+- [ ] Pick the thank-you insert format (1, 2 or 3), the return code name, the discount % and any limits. Options PDF emailed 2026-10-07. Waiting on: Shawn
+- [ ] Create the coupon and promotion code in Stripe once Shawn confirms the code name, % and limits, then place a test order (#114 is merged). Owner: Finley
+- [ ] Unblock #113 (Shippo auto-labels): owner OK for automatic postage purchase per order, the full origin address (only `SHIPPING_ORIGIN_ZIP` is set) and the real packed parcel size and weight. Waiting on: Shawn
+- [ ] Check the shipping quote weight: 0.7 oz per unit in a 6 x 4 x 1 in parcel looks light for a padded mailer plus an insert. Use the real packed weight from #113 to set `PRODUCT_WEIGHT_OZ` and the parcel size. Owner: Finley
+- [ ] Answer Shawn's 2026-10-03 email about opening a Mercury account and its minimum balance. Owner: Finley
+- [ ] Send bank statements and card info to Lauren for the 2025 books. Owner: Shawn
+- [ ] Send vendor receipts for the 72 units. Owner: Shawn
+- [ ] Write the reimbursement check (about $1,500 to $1,700 at original cost). Owner: Shawn
+- [ ] Confirm whether a 2025 filing is required, given the mid-December formation date. Owner: Lauren
+- [ ] Review Meta ad performance after a couple of weeks on the $500/month budget (about $21.35/day) before changing anything. Owner: Finley
 - [ ] Confirm Railway appends to X-Forwarded-For rather than overwriting it (single proxy hop). The rate limiter keys on the rightmost entry and assumes Railway adds it. Owner: Finley
 - [ ] Decide whether to retro-review #93 to #99, which were hand-merged on 2026-09-28 without a factory verdict. Owner: Finley
 - [ ] Return the attribution columns from `/admin/orders` and show them in the admin (ROADMAP Stage 2). Owner: Finley
@@ -146,6 +171,8 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Risks & known issues  [rewrite]
 
+- **Shipping may be under-quoted (unconfirmed).** Checkout quotes assume 0.7 oz per unit in a 6 x 4 x 1 in parcel (`PRODUCT_WEIGHT_OZ`, `src/routes/shipping.ts`). A padded mailer plus an insert likely weighs more, so customers may pay less shipping than the label costs.
+- **Discounts not stored on orders.** Since #114, the orders table and Sheet keep the pre-discount subtotal. Revenue read from either will overstate discounted orders until a discount column is added.
 - **Unreviewed merges.** #93 to #99 (order emails, checkout fix, Vitest) went to master by hand with no factory verdict. They touch the webhook and checkout.
 - **`reviewer_completed` can be wrong.** On #104 the reviewer reported `reviewer_completed: true` though it only matched paths and did not read the full diff. That backstop cannot be trusted to prove a full review happened; an APPROVE-LOWRISK could rest on a file-list check alone.
 - **Rate limiter limits.** The `POST /tcgplayer/price` limiter lives in process memory: it resets on every deploy and would multiply with replicas. It keys on the rightmost X-Forwarded-For entry, which is only safe if Railway appends its own entry (unconfirmed).
@@ -168,6 +195,8 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 - **API host:** https://workspaceapi-server-production-c93f.up.railway.app (Railway project "Tommy Top Decker Trading Co", auto-deploys from master)
 - **Repo:** https://github.com/Kuba-Ventures/Nemat-Trading (public, default branch `master`, protected)
 - **Roadmap:** `ROADMAP.md`
+- **Brand guide:** `docs/brand-guide` (#115)
+- **Shippo labels issue:** https://github.com/Kuba-Ventures/Nemat-Trading/issues/113
 - **Factory issue (closed):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/96
 - **Client Drive folder:** (unknown)
 - **Slack channel:** (none known)
@@ -177,6 +206,7 @@ Fixed a production outage on 2026-10-06. On tommytopdecker.com the product photo
 
 ## Changelog  [append-only, never rewrite or delete]
 
+- **2026-10-07:** Recorded the brand guide (#115, merged: 11 pages, TT card mark palette, game-neutral "Sealed packs. Under market." positioning; Nemat stays internal), three thank-you insert formats with a placeholder 10% code and a UTM-tagged QR (options emailed to Shawn), #114 (Stripe promotion codes, discount line in both emails, 57/57 tests; merged at the owner's request, coupon not yet created; live checkout not checked this run) and #113 (Shippo auto-labels, Option C, blocked on owner inputs). Added the 2026-10-01 check-in loops for Shawn and Lauren, the unanswered Mercury question and a possible shipping under-quote (0.7 oz per unit). Tagline and value prop now game-neutral.
 - **2026-10-06:** Recorded the CORS outage and fix: `FRONTEND_URL` on Railway held only www while the site serves from apex, so the storefront showed a stale $32.00 fallback with no photo. Set it to apex + www and redeployed (config only). The comma-separated value then broke Stripe redirect URLs until #110 took the first entry; checkout was likely failing for about 30 minutes (unconfirmed). Updated the `FRONTEND_URL` docs in `README.md` and `.env.example`. Corrected Links: apex is primary, not www. Live check: TMNT still has empty `possiblePulls`. Verified #110 on prod the same day with an end-to-end test checkout: ZIP 10001 loaded shipping rates (Ground Advantage $6.07, Priority $13.48, Express $49.98), Stripe Checkout showed TMNT $34.00 + $6.07 = $40.07, and Stripe's back arrow (`cancel_url`) returned to the single valid URL https://tommytopdecker.com/checkout?qty=1. Nothing was paid and no order was created.
 - **2026-10-02:** Recorded #107 (ROADMAP.md marks #96 and #104 done, closing that open loop) and #108 (initiative and previews preferences in `CLAUDE.md`). Backfilled ROADMAP.md: a sourced date on all 23 items, a date range on every stage and a Timeline from the first commit (2026-03-13). Live check: storefront returns 200 and serves `GTM-TVHXMXW5`; API route checks were not run this time.
 - **2026-10-02:** Recorded #104 (lookup routes behind `requireAdmin`, `/tcgplayer/debug` removed, public price route rate limited and price-only) and #105 (ROADMAP root cause corrected). Closed out the #96 open loop: #104 got a real ESCALATE verdict on the pinned SHA. Added risks for `reviewer_completed` reporting true without a full diff read and for the per-process limiter. New open loop: confirm Railway's X-Forwarded-For behavior.
