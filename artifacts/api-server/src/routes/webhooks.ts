@@ -51,6 +51,8 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     const subtotalCents = lineItems.reduce((n, li) => n + (li.amount_subtotal ?? 0), 0);
     const shippingCents = full.shipping_cost?.amount_total ?? 0;
     const taxCents = full.total_details?.amount_tax ?? 0;
+    // Promotion codes reduce the total; line item subtotals stay pre-discount.
+    const discountCents = full.total_details?.amount_discount ?? 0;
     const totalCents = full.amount_total ?? 0;
     const currency = (full.currency ?? "usd").toUpperCase();
     const customerEmail = full.customer_details?.email ?? "";
@@ -61,7 +63,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     const breakdownRate =
       full.total_details?.breakdown?.taxes?.[0]?.rate?.effective_percentage ??
       full.total_details?.breakdown?.taxes?.[0]?.rate?.percentage;
-    const taxableBase = subtotalCents + shippingCents;
+    const taxableBase = subtotalCents - discountCents + shippingCents;
     const taxRate =
       breakdownRate != null
         ? `${breakdownRate}%`
@@ -98,6 +100,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       item: itemName,
       quantity: orderCount,
       subtotal: (subtotalCents / 100).toFixed(2),
+      discount: (discountCents / 100).toFixed(2),
       shipping: (shippingCents / 100).toFixed(2),
       tax: (taxCents / 100).toFixed(2),
       taxRate,

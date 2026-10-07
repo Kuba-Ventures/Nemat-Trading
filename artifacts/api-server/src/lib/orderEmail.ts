@@ -10,6 +10,8 @@ export type OrderEmailInput = {
   item: string;
   quantity: number;
   subtotal: string;
+  // Promotion code discount, e.g. "3.40". Omitted or "0.00" when none was used.
+  discount?: string;
   shipping: string;
   tax: string;
   taxRate: string;
@@ -57,6 +59,10 @@ function row(label: string, valueHtml: string): string {
   );
 }
 
+function isDiscounted(o: OrderEmailInput): boolean {
+  return !!o.discount && Number(o.discount) > 0;
+}
+
 export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
   // "City, ST 12345", tolerant of any part missing.
   const locality = [o.city, o.state].filter(Boolean).join(", ");
@@ -69,6 +75,7 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
   const qty = String(o.quantity || 1);
   const total = `${o.currency ? o.currency + " " : ""}${o.total}`;
   const taxLine = o.tax + (o.taxRate ? ` (${o.taxRate})` : "");
+  const hasDiscount = isDiscounted(o);
   const stripeUrl = o.paymentIntentId
     ? `https://dashboard.stripe.com/payments/${o.paymentIntentId}`
     : "";
@@ -88,6 +95,7 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
     "",
     "ORDER",
     `  Subtotal  ${o.subtotal}`,
+    ...(hasDiscount ? [`  Discount  -${o.discount}`] : []),
     `  Shipping  ${o.shipping}`,
     `  Tax       ${taxLine}`,
     `  Total     ${total}`,
@@ -108,6 +116,7 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
       "Order",
       [
         row("Subtotal", esc(o.subtotal)),
+        ...(hasDiscount ? [row("Discount", esc(`-${o.discount}`))] : []),
         row("Shipping", esc(o.shipping)),
         row("Tax", esc(taxLine)),
         row("Total", `<strong>${esc(total)}</strong>`),
@@ -235,6 +244,7 @@ export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPac
     "",
     `Order #${orderRef}`,
     `  ${lineLabel} ×${qty}  $${o.subtotal}`,
+    ...(isDiscounted(o) ? [`  Discount  -$${o.discount}`] : []),
     `  Shipping  $${o.shipping}`,
     `  Tax       $${o.tax}`,
     `  Total paid  $${o.total}`,
@@ -284,6 +294,7 @@ export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPac
       `style="font:14px/1.5 Helvetica,Arial,sans-serif;color:#ffffff">`,
     label(`Order #${orderRef}`, true),
     line(`${lineLabel} ×${qty}`, `$${o.subtotal}`),
+    ...(isDiscounted(o) ? [line("Discount", `-$${o.discount}`)] : []),
     line("Shipping", `$${o.shipping}`),
     line("Tax", `$${o.tax}`),
     `<tr><td style="${totalCell}">Total paid</td><td align="right" style="${totalCell}">${esc(`$${o.total}`)}</td></tr>`,
