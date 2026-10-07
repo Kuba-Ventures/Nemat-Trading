@@ -1,0 +1,138 @@
+
+  @font-face {
+    font-family: "Gotham Black";
+    src: url("fonts/Gotham-Black.otf") format("opentype");
+    font-weight: 900;
+    font-display: swap;
+  }
+  :root {
+    --charcoal: #2b2b30;
+    --ink: #1c1c20;
+    --cream: #f5f0e6;
+    --paper: #efe8da;
+    --gold: #c9a961;
+    --gold-soft: #ddc89a;
+    --red: #b03a3a;
+    --taupe: #8a7a5c;
+    --graphite: #4a4a50;
+    --display: "Gotham Black", "Montserrat", "Arial Black", sans-serif;
+    --body: "Inter", system-ui, -apple-system, sans-serif;
+    --mono: "JetBrains Mono", Menlo, monospace;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: #d9d2c4; font-family: var(--body); color: var(--ink); padding: 32px 16px; }
+  .page, .optlabel { zoom: var(--fit, 1); }
+  .page {
+    position: relative;
+    width: 1170px; height: 827px;
+    margin: 0 auto 40px;
+    background: var(--paper);
+    overflow: hidden;
+    box-shadow: 0 2px 24px rgba(0,0,0,.12);
+  }
+  .frame { position: absolute; inset: 47px; border: 1px solid var(--ink); }
+  .kicker { font-family: var(--mono); font-size: 10.5px; letter-spacing: .32em; text-transform: uppercase; color: var(--taupe); }
+  .meta { font-family: var(--mono); font-size: 10px; letter-spacing: .28em; text-transform: uppercase; color: var(--graphite); line-height: 1.7; }
+  .folio { font-family: var(--mono); font-size: 12px; letter-spacing: .24em; text-transform: uppercase; color: var(--ink); }
+  .chip { font-family: var(--mono); font-size: 10.5px; letter-spacing: .22em; text-transform: uppercase; border: 1px solid var(--ink); padding: 6px 11px; }
+  .optlabel { max-width: 1170px; margin: 0 auto 10px; font-family: var(--mono); font-size: 13px; letter-spacing: .16em; text-transform: uppercase; }
+  .optlabel b { background: var(--ink); color: var(--cream); padding: 3px 9px; margin-right: 10px; }
+
+  /* ---------- 01 COVER (shared) ---------- */
+  .cover .tl { position: absolute; left: 32px; top: 26px; }
+  .cover .tr { position: absolute; right: 32px; top: 26px; text-align: right; }
+  .cover .fl { position: absolute; left: 32px; bottom: 26px; }
+  .cover .fr { position: absolute; right: 32px; bottom: 24px; }
+  .cover .eyebrow { position: absolute; left: 32px; top: 128px; }
+  .cover h1 {
+    position: absolute; left: 30px; top: 166px;
+    font-family: var(--display); font-weight: 900;
+    font-size: 92px; line-height: .94; text-transform: uppercase;
+  }
+  .cover h1 .gold { color: var(--gold); display: block; }
+  .cover h1 .sub { display: block; font-size: 28px; letter-spacing: .5em; margin-top: 20px; }
+  .cover .deck { position: absolute; right: 60px; top: 110px; width: 380px; height: 400px; }
+  .cover .rule { position: absolute; left: 32px; right: 32px; top: 497px; border-top: 1px solid var(--ink); }
+  .cover .tagline { position: absolute; left: 32px; top: 528px; font-weight: 500; font-size: 26px; color: var(--taupe); letter-spacing: -.01em; }
+  .cover .chips { position: absolute; left: 32px; top: 604px; display: flex; gap: 26px; }
+
+  /* B: reversed */
+  .cover.rev { background: var(--charcoal); color: var(--cream); }
+  .cover.rev .frame { border-color: var(--gold); }
+  .cover.rev .meta, .cover.rev .folio { color: #b9b1a0; }
+  .cover.rev .kicker { color: var(--gold); }
+  .cover.rev .rule { border-color: var(--gold); opacity: .6; }
+  .cover.rev .tagline { color: var(--gold-soft); }
+  .cover.rev .chip { border-color: var(--gold); }
+
+
+  /* C: centered card hero */
+  .cover.center .hero { position: absolute; left: 0; right: 0; top: 80px; display: flex; flex-direction: column; align-items: center; }
+  .cover.center .hero svg { width: 150px; height: 210px; }
+  .cover.center .hero .kicker { margin-top: 28px; }
+  .cover.center .word { margin-top: 14px; font-family: var(--display); font-size: 64px; line-height: 1; text-transform: uppercase; }
+  .cover.center .word .gold { color: var(--gold); }
+  .cover.center .word2 { margin-top: 14px; font-family: var(--display); font-size: 20px; letter-spacing: .6em; padding-left: .6em; text-transform: uppercase; }
+  .cover.center .rule { top: 548px; left: 260px; right: 260px; border-color: var(--gold); }
+  .cover.center .tagline { left: 0; right: 0; top: 570px; text-align: center; }
+  .cover.center .chips { left: 0; right: 0; top: 626px; justify-content: center; }
+
+  /* ---------- INTERIOR PAGES (charcoal system) ---------- */
+  .pg { background: var(--charcoal); color: var(--cream); }
+  .pg .frame { border-color: var(--gold); }
+  .pg .hdr-l, .pg .hdr-r { position: absolute; top: 28px; }
+  .pg .hdr-l { left: 32px; } .pg .hdr-r { right: 32px; }
+  .pg .ftr-l { position: absolute; left: 32px; bottom: 26px; }
+  .pg .ftr-r { position: absolute; right: 32px; bottom: 24px; }
+  .pg .meta, .pg .folio { color: #b9b1a0; }
+  .pg .folio { color: var(--cream); }
+  .pg .kicker { color: var(--gold); }
+  .pg .lede { font-size: 14px; line-height: 1.75; color: #d6cfc0; }
+  .pg .lede b { color: var(--cream); font-weight: 600; }
+  .pg .h2 { font-family: var(--display); text-transform: uppercase; line-height: .98; }
+  .pg .h2 .gold { color: var(--gold); display: block; }
+  .pg .small { font-size: 12.5px; line-height: 1.6; color: #b9b1a0; }
+  .pg .label { font-family: var(--mono); font-size: 12px; letter-spacing: .26em; text-transform: uppercase; color: var(--cream); }
+  .pg .num { font-family: var(--mono); font-size: 10px; letter-spacing: .2em; color: var(--gold); }
+  .pg .rule-g { border-top: 1px solid var(--gold); opacity: .55; }
+  .pg .rule-c { border-top: 1px solid #6b665c; }
+  .on-dark, .cover.rev { --card-fill: #1f1f23; --card-stroke: #55514a; }
+  .panel-cream { background: var(--cream); border-radius: 4px; }
+  .panel-dark { background: #232327; border: 1px solid #45423c; border-radius: 4px; }
+  .callout { font-family: var(--mono); font-size: 10px; letter-spacing: .18em; text-transform: uppercase; color: var(--gold); }
+
+  /* ---------- WORDMARKS ---------- */
+  .wm { font-family: var(--display); text-transform: uppercase; line-height: 1; color: var(--ink); --acc: var(--gold); --sub: var(--taupe); }
+  .wm .acc { color: var(--acc); }
+  .wm.rev { color: var(--cream); --sub: #b9b1a0; }
+  .wm.mono { --acc: var(--ink); --sub: var(--ink); }
+  .wm .trading { font-family: var(--display); letter-spacing: .55em; color: var(--sub); display: flex; align-items: center; gap: .9em; justify-content: center; }
+  .wm .trading::before, .wm .trading::after { content: ""; height: 1px; flex: 1; background: var(--acc); }
+  /* A stacked */
+  .wm-a { text-align: center; display: inline-flex; flex-direction: column; gap: .32em; }
+  .wm-a .trading { font-size: .3em; padding-left: .55em; }
+  /* B lockup */
+  .wm-b { display: inline-flex; align-items: center; gap: .5em; }
+  .wm-b .txt { display: flex; flex-direction: column; gap: .12em; }
+  .wm-b .trading { font-size: .3em; justify-content: flex-start; margin-top: .3em; }
+  .wm-b .trading::before { display: none; }
+  /* C title bar */
+  .wm-c { display: inline-flex; flex-direction: column; align-items: stretch; gap: .35em; }
+  .wm-c .bar { border: .06em solid var(--acc); border-radius: .3em; padding: .32em .5em .32em .6em; display: flex; align-items: center; gap: .55em; }
+  .wm-c .pip { width: .42em; height: .42em; background: var(--pip, var(--red)); transform: rotate(45deg); flex: none; }
+  .wm.mono .pip { --pip: var(--ink); }
+  .wm-c .trading { font-size: .3em; padding-left: .55em; }
+  .wm-c .trading::before, .wm-c .trading::after { display: none; }
+  .mk-panel { height: 180px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+  .cw { height: 104px; display: flex; align-items: center; justify-content: center; border-radius: 4px; }
+  .wm-c .bar > span:first-child, .wm-a > div:first-child { white-space: nowrap; }
+
+  /* ---------- PRINT / PDF ---------- */
+  @page { size: 1170px 827px; margin: 0; }
+  @media print {
+    html, body { padding: 0; margin: 0; background: none; }
+    * { -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .page { margin: 0; box-shadow: none; zoom: 1 !important; break-after: page; page-break-after: always; }
+    .page:last-of-type { break-after: auto; page-break-after: auto; }
+    .optlabel { display: none; }
+  }
