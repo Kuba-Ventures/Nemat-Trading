@@ -9,6 +9,12 @@ function money(cents: number) {
   return `$${(cents / 100).toFixed(2)}`;
 }
 
+type AppliedPromo = {
+  code: string;
+  percentOff: number | null;
+  amountOffCents: number | null;
+};
+
 type ShippingRate = {
   rateId: string;
   service: string;
@@ -26,6 +32,14 @@ export default function CheckoutPage() {
   const [rates, setRates] = useState<ShippingRate[] | null>(null);
   const [selectedRateId, setSelectedRateId] = useState<string | null>(null);
 
+  // Promo codes are one use per customer, so the email is asked for only once
+  // a code is entered, and checked by the API before payment.
+  const [promoInput, setPromoInput] = useState("");
+  const [promoEmail, setPromoEmail] = useState("");
+  const [promoLoading, setPromoLoading] = useState(false);
+  const [promoError, setPromoError] = useState<string | null>(null);
+  const [appliedPromo, setAppliedPromo] = useState<AppliedPromo | null>(null);
+
   const { qty, productId } = useMemo(() => {
     const params = new URLSearchParams(window.location.search);
     const parsedQty = Number(params.get("qty") ?? "1");
@@ -40,7 +54,44 @@ export default function CheckoutPage() {
   const itemsCents = unitCents * qty;
   const selectedRate = rates?.find((r) => r.rateId === selectedRateId) ?? null;
   const shippingCents = selectedRate?.amountCents ?? 0;
-  const totalCents = itemsCents + shippingCents;
+  // Stripe applies the discount to the item, not shipping; it shows the exact
+  // figure on its page.
+  const discountCents = appliedPromo
+    ? appliedPromo.percentOff != null
+      ? Math.round((itemsCents * appliedPromo.percentOff) / 100)
+      : Math.min(appliedPromo.amountOffCents ?? 0, itemsCents)
+    : 0;
+  const totalCents = itemsCents - discountCents + shippingCents;
+
+  const handleApplyPromo = async () => {
+    setPromoError(null);
+    if (!/^\S+@\S+\.\S+$/.test(promoEmail.trim())) {
+      setPromoError("Enter your email to use a code");
+      return;
+    }
+    setPromoLoading(true);
+    try {
+      const res = await fetch(`${API_URL}/api/checkout/promo`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ code: promoInput, email: promoEmail }),
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? "That code isn't valid");
+      setAppliedPromo(data);
+    } catch (err: any) {
+      setPromoError(err.message ?? "That code isn't valid");
+    } finally {
+      setPromoLoading(false);
+    }
+  };
+
+  const handleRemovePromo = () => {
+    setAppliedPromo(null);
+    setPromoInput("");
+    setPromoEmail("");
+    setPromoError(null);
+  };
 
   const handleFetchRates = async () => {
     setError(null);
@@ -85,6 +136,7 @@ export default function CheckoutPage() {
           quantity: qty,
           shippingRateId: selectedRateId,
           attribution: getAttribution(),
+          ...(appliedPromo ? { promoCode: appliedPromo.code, email: promoEmail } : {}),
         }),
       });
       const text = await res.text();
@@ -195,6 +247,67 @@ export default function CheckoutPage() {
                   </label>
                 ))}
               </div>
+            </div>
+          )}
+
+          {/* Promo code */}
+          <div className="border-b border-white/10 pb-4">
+            <label className="block text-xs uppercase tracking-[0.25em] text-gray-500 mb-2">
+              Promo code
+            </label>
+            {appliedPromo ? (
+              <div className="flex items-center justify-between rounded border border-cyan-400/40 bg-cyan-400/[0.05] px-4 py-3 text-sm">
+                <span className="tracking-widest">{appliedPromo.code}</span>
+                <button
+                  onClick={handleRemovePromo}
+                  className="text-xs uppercase tracking-[0.2em] text-gray-400 hover:text-white transition-colors"
+                >
+                  Remove
+                </button>
+              </div>
+            ) : (
+              <>
+                <div className="flex gap-2">
+                  <input
+                    type="text"
+                    placeholder="Enter code"
+                    value={promoInput}
+                    onChange={(e) => setPromoInput(e.target.value.toUpperCase())}
+                    className="flex-1 min-w-0 bg-white/[0.03] border border-white/10 rounded px-4 py-3 text-sm uppercase tracking-widest placeholder:normal-case placeholder:tracking-normal placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                  />
+                  <button
+                    onClick={handleApplyPromo}
+                    disabled={promoLoading || !promoInput.trim()}
+                    className="px-5 py-3 bg-white/[0.06] border border-white/10 text-xs font-bold uppercase tracking-[0.2em] rounded hover:bg-white/10 transition-colors disabled:opacity-40 disabled:cursor-not-allowed"
+                  >
+                    {promoLoading ? "..." : "Apply"}
+                  </button>
+                </div>
+                {promoInput.trim() && (
+                  <>
+                    <input
+                      type="email"
+                      autoComplete="email"
+                      placeholder="Email for your order"
+                      value={promoEmail}
+                      onChange={(e) => setPromoEmail(e.target.value)}
+                      className="mt-2 w-full bg-white/[0.03] border border-white/10 rounded px-4 py-3 text-sm placeholder-gray-600 focus:outline-none focus:border-cyan-500/50 transition-colors"
+                    />
+                    <p className="mt-2 text-xs text-gray-500">Codes are one use per customer, tied to this email.</p>
+                  </>
+                )}
+              </>
+            )}
+            {promoError && <p className="mt-2 text-xs text-red-400">{promoError}</p>}
+          </div>
+
+          {appliedPromo && (
+            <div className="flex items-center justify-between text-sm text-gray-300">
+              <span>
+                {appliedPromo.code}
+                {appliedPromo.percentOff != null && ` (${appliedPromo.percentOff}% off)`}
+              </span>
+              <span className="text-cyan-400">−{money(discountCents)}</span>
             </div>
           )}
 
