@@ -31,6 +31,6 @@ Swap in `thank-you-insert-options.html` for the insert sheet.
 
 ## Open items
 
-- Thank-you insert format (1, 2 or 3), coupon code name, % and limits are pending from the client. `TOPDECK10` on the inserts is a placeholder.
-- The insert previews are not print-ready (no bleed or crop marks). Build the print file at actual size once a format is chosen.
+- Client decision (Shawn, 2026-10-07): format 1, the 2.5 x 3.5 in card. Code `TOPDECK10`, 10% off, one use per customer.
+- The insert previews are not print-ready (no bleed or crop marks). Build the format 1 print file at actual size next.
 - The insert QR points to `https://tommytopdecker.com/?utm_source=insert&utm_medium=print&utm_campaign=thankyou`.
