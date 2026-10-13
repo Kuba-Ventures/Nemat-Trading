@@ -1,11 +1,7 @@
 import { Router } from "express";
 import { db, productsTable } from "@workspace/db";
 import { eq } from "drizzle-orm";
-
-const SHIPPO_API = "https://api.goshippo.com";
-
-const ORIGIN_ZIP = process.env.SHIPPING_ORIGIN_ZIP ?? "94303";
-const WEIGHT_OZ_PER_UNIT = Number(process.env.PRODUCT_WEIGHT_OZ ?? "0.7");
+import { ORIGIN_ZIP, SHIPPO_API, parcelFor } from "../lib/shippo";
 
 type ShippoRate = {
   object_id: string;
@@ -54,8 +50,6 @@ router.post("/shipping/rates", async (req, res) => {
     return;
   }
 
-  const totalWeightOz = Math.max(WEIGHT_OZ_PER_UNIT * quantity, 0.1);
-
   try {
     const shipmentRes = await fetch(`${SHIPPO_API}/shipments/`, {
       method: "POST",
@@ -66,16 +60,8 @@ router.post("/shipping/rates", async (req, res) => {
       body: JSON.stringify({
         address_from: { zip: ORIGIN_ZIP, country: "US" },
         address_to: { zip: destinationZip, country: "US" },
-        parcels: [
-          {
-            length: "6",
-            width: "4",
-            height: "1",
-            distance_unit: "in",
-            weight: totalWeightOz.toFixed(2),
-            mass_unit: "oz",
-          },
-        ],
+        // Same parcel the label is bought with (lib/shippo.ts).
+        parcels: [parcelFor(quantity)],
         async: false,
       }),
     });

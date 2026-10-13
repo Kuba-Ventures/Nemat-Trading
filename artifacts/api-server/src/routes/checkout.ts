@@ -13,7 +13,7 @@ type ShippoRate = {
   amount: string;
   currency: string;
   provider: string;
-  servicelevel: { name: string };
+  servicelevel: { name: string; token: string };
 };
 
 const router = Router();
@@ -170,6 +170,8 @@ router.post("/checkout", async (req, res) => {
     ],
     metadata: {
       productId: String(productId),
+      // The service the customer paid for, so the label buys the same one.
+      shippoService: rate.servicelevel.token,
       // Ad click id + UTM tags, so the order can be matched to a Meta ad.
       ...attributionToMetadata(sanitizeAttribution(attribution)),
     },

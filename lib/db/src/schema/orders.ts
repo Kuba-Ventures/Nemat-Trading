@@ -23,6 +23,12 @@ export const ordersTable = pgTable("orders", {
   utmContent: text("utm_content"),
   utmTerm: text("utm_term"),
   landedAt: text("landed_at"),
+  // Shippo label bought by the webhook (issue #113). Null if none was bought.
+  shippoTransactionId: text("shippo_transaction_id"),
+  trackingNumber: text("tracking_number"),
+  trackingUrl: text("tracking_url"),
+  labelUrl: text("label_url"),
+  labelCostCents: integer("label_cost_cents"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 
