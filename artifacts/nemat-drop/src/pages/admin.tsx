@@ -1,5 +1,6 @@
 import { useState, useEffect, useRef, useCallback } from "react";
 import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
+import { FinanceDashboard, GrowthDashboard, type Metrics } from "./adminDashboards";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -68,7 +69,7 @@ type Product = {
   createdAt: string;
 };
 
-type View = "list" | "new" | "edit" | "waitlist" | "orders";
+type View = "list" | "new" | "edit" | "waitlist" | "orders" | "finance" | "growth";
 
 type AdminOrder = {
   id: number;
@@ -117,6 +118,8 @@ function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) 
     <div className="flex items-center justify-between mb-10">
       <a href="/" className="text-xs text-gray-500 hover:text-white transition-colors">← Storefront</a>
       <div className="flex items-center gap-6">
+        {tab("finance", "Finance")}
+        {tab("growth", "Growth")}
         {tab("list", "Products")}
         {tab("orders", "Orders")}
         {tab("waitlist", "Waitlist")}
@@ -1394,6 +1397,12 @@ export default function AdminPage() {
   const [view, setView] = useState<View>("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
+  const loadMetrics = useCallback(async (range: string): Promise<Metrics> => {
+    const res = await adminFetch(`${API_URL}/api/admin/metrics?range=${encodeURIComponent(range)}`);
+    if (!res.ok) throw new Error(`API returned ${res.status}`);
+    return res.json();
+  }, []);
+
   // Any 401 from an admin call (expired or rotated token) returns to the login.
   useEffect(() => {
     const signOut = () => { clearToken(); setAdminKey(""); setLoginError("Session expired. Log in again."); };
@@ -1449,8 +1458,8 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-black text-white px-6 py-10">
-      <div className="mx-auto max-w-4xl">
-        {(view === "list" || view === "orders" || view === "waitlist") && (
+      <div className={`mx-auto ${view === "finance" || view === "growth" ? "max-w-6xl" : "max-w-4xl"}`}>
+        {(view === "list" || view === "orders" || view === "waitlist" || view === "finance" || view === "growth") && (
           <AdminNav active={view} onNavigate={setView} />
         )}
         {view === "list" && (
@@ -1470,6 +1479,8 @@ export default function AdminPage() {
         )}
         {view === "waitlist" && <SubscriberList adminKey={adminKey} />}
         {view === "orders" && <OrderList adminKey={adminKey} />}
+        {view === "finance" && <FinanceDashboard load={loadMetrics} />}
+        {view === "growth" && <GrowthDashboard load={loadMetrics} />}
       </div>
     </main>
   );
