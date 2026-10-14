@@ -195,10 +195,15 @@ export function summarizeOrders(
 
 // ─── Meta Marketing API ───────────────────────────────────────────────────────
 
+export type CampaignState = "active" | "ended" | "paused" | "other";
+
 export type MetaCampaign = {
   id: string;
   name: string;
   status: string; // effective_status, e.g. ACTIVE, PAUSED, COMPLETED
+  state: CampaignState;
+  statusLabel: string; // e.g. "Active", "Paused", "Ended Oct 6"
+  endsAt: string | null; // ISO end of the campaign (or its last ad set), if scheduled
   spendCents: number;
   ctr: number | null; // percent
   purchases: number;
@@ -219,7 +224,55 @@ type InsightRow = {
   actions?: InsightAction[];
   date_start?: string;
 };
-type CampaignRow = { id?: string; name?: string; effective_status?: string };
+type CampaignRow = {
+  id?: string;
+  name?: string;
+  effective_status?: string;
+  stop_time?: string;
+  adsets?: { data?: { end_time?: string }[] };
+};
+
+const OTHER_LABEL: Record<string, string> = {
+  ARCHIVED: "Archived",
+  DELETED: "Deleted",
+  IN_PROCESS: "Starting",
+  WITH_ISSUES: "Issues",
+  DISAPPROVED: "Rejected",
+  PENDING_REVIEW: "In review",
+};
+const PAUSED = new Set(["PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"]);
+
+/**
+ * When a campaign stops: its own stop_time, else the latest ad set end_time,
+ * but only if every ad set has one (an open-ended ad set keeps it running).
+ */
+export function campaignEnd(row: CampaignRow): string | null {
+  if (row.stop_time) return row.stop_time;
+  const sets = row.adsets?.data ?? [];
+  if (!sets.length || sets.some((a) => !a.end_time)) return null;
+  return sets.map((a) => a.end_time!).sort((a, b) => Date.parse(b) - Date.parse(a))[0];
+}
+
+const shortDate = (iso: string) =>
+  new Date(iso).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: BUSINESS_TZ });
+
+/**
+ * Meta keeps reporting effective_status ACTIVE after a scheduled end date has
+ * passed, so the end date wins: a past end reads "Ended <date>".
+ */
+export function campaignStatus(
+  effective: string,
+  endsAt: string | null,
+  now = new Date(),
+): { state: CampaignState; label: string } {
+  const ended = endsAt != null && Date.parse(endsAt) <= now.getTime();
+  if (effective === "COMPLETED" || (ended && !PAUSED.has(effective) && !OTHER_LABEL[effective])) {
+    return { state: "ended", label: endsAt ? `Ended ${shortDate(endsAt)}` : "Ended" };
+  }
+  if (PAUSED.has(effective)) return { state: "paused", label: "Paused" };
+  if (effective === "ACTIVE") return { state: "active", label: "Active" };
+  return { state: "other", label: OTHER_LABEL[effective] ?? effective.toLowerCase().replace(/_/g, " ") };
+}
 
 // Meta reports a purchase under several overlapping action types; take the
 // first present, in this order, so one sale is never counted twice.
@@ -238,21 +291,29 @@ const toCents = (s: string | undefined) => Math.round((Number(s) || 0) * 100);
 /**
  * Builds the Growth page's Meta block from three Graph API responses:
  * campaign-level insights, account-level daily insights, and the campaign list
- * (for effective_status). Campaigns that are active or spent in range are kept.
+ * (for effective_status and end dates). Campaigns that are running or spent in
+ * range are kept.
  */
 export function parseMetaInsights(
   campaignInsights: { data?: InsightRow[] },
   dailyInsights: { data?: InsightRow[] },
   campaignList: { data?: CampaignRow[] },
   days: string[],
+  now = new Date(),
 ): MetaSummary {
   const byId = new Map<string, MetaCampaign>();
   for (const c of campaignList.data ?? []) {
     if (!c.id) continue;
+    const status = c.effective_status ?? "UNKNOWN";
+    const endsAt = campaignEnd(c);
+    const { state, label } = campaignStatus(status, endsAt, now);
     byId.set(c.id, {
       id: c.id,
       name: c.name ?? "Untitled campaign",
-      status: c.effective_status ?? "UNKNOWN",
+      status,
+      state,
+      statusLabel: label,
+      endsAt,
       spendCents: 0,
       ctr: null,
       purchases: 0,
@@ -264,6 +325,9 @@ export function parseMetaInsights(
       id: r.campaign_id,
       name: r.campaign_name ?? "Untitled campaign",
       status: "UNKNOWN",
+      state: "other",
+      statusLabel: "unknown",
+      endsAt: null,
       spendCents: 0,
       ctr: null,
       purchases: 0,
@@ -282,8 +346,8 @@ export function parseMetaInsights(
   }
 
   const campaigns = [...byId.values()]
-    .filter((c) => c.status === "ACTIVE" || c.spendCents > 0)
-    .sort((a, b) => Number(b.status === "ACTIVE") - Number(a.status === "ACTIVE") || b.spendCents - a.spendCents);
+    .filter((c) => c.state === "active" || c.spendCents > 0)
+    .sort((a, b) => Number(b.state === "active") - Number(a.state === "active") || b.spendCents - a.spendCents);
 
   return {
     spendCents: campaigns.reduce((n, c) => n + c.spendCents, 0),
