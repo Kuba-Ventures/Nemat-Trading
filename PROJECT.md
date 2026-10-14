@@ -1,7 +1,7 @@
 # Nemat / Tommy Top Decker Trading
 *Sealed trading card pack drops, under market, with honest pull odds.*
 
-*Last updated: 2026-10-14 15:33 ET by kuba-vault*
+*Last updated: 2026-10-14 15:47 ET by kuba-vault*
 
 ---
 
@@ -26,14 +26,14 @@ Tommy Top Decker Trading sells one sealed-pack drop at a time at tommytopdecker.
 - **Engagement manager:** self-directed
 - **Lead:** Finley (build); Shawn (owner); Lauren (books)
 - **Cadence:** check-ins with Shawn (last 2026-10-01) plus email; Shawn approved the relaunch on 2026-10-14
-- **Next milestone:** first real order from the relaunch campaign shows Purchase from Browser and Server in Events Manager, with a label bought through the sales@ link (no date set)
+- **Next milestone:** first real order from the relaunch campaign shows Purchase from Browser and Server in Events Manager (no date set)
 - **Flags:** shipping
 
 ---
 
 ## Where we are right now  [rewrite]
 
-The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct - 14d - Sales" was Active with $0 spent at 12:20 PM ET that day. New ad assets are in progress. The first campaign, "TTD Nemat - TMNT Collector - Sales", ran 2026-09-28 to 2026-10-06: $133.88 spent, 4.9% CTR, 1 real sale ($43.07, credited by hand), ROAS 0.32x. Issue #127 is closed. Meta never stopped receiving Purchase events; the Oct 13 orders only looked missing because the Overview date range ended Oct 12. The real gap was the 2026-09-30 Cash App Pay sale: the pixel never loaded on `/success`, so Meta never saw it. #130 now sends Purchase from the Stripe webhook to the Conversions API, deduplicated on the Stripe session id. A live $40.07 test order (refunded) on 2026-10-13 at 10:00 PM ET showed Browser and Server events with the same event id. The admin now has live Finance and Growth pages with a sync pill (#132), and that pill caught a Meta for Developers account lock on 2026-10-14 within minutes. Next concrete step: watch the first real relaunch order in Events Manager. It should show both Browser and Server Purchase, which also confirms the CAPI token survived the account lock.
+The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct - 14d - Sales" was Active with $0 spent at 12:20 PM ET that day. Finley is making new ad assets. The first campaign, "TTD Nemat - TMNT Collector - Sales", ran 2026-09-28 to 2026-10-06: $133.88 spent, 4.9% CTR, 1 real sale ($43.07, credited by hand), ROAS 0.32x. Issue #127 is closed. Meta never stopped receiving Purchase events; the Oct 13 orders only looked missing because the Overview date range ended Oct 12. The real gap was the 2026-09-30 Cash App Pay sale: the pixel never loaded on `/success`, so Meta never saw it. #130 now sends Purchase from the Stripe webhook to the Conversions API, deduplicated on the Stripe session id. A live $40.07 test order (refunded) on 2026-10-13 at 10:00 PM ET showed Browser and Server events with the same event id. The admin now has live Finance and Growth pages with a sync pill (#132), and that pill caught a Meta for Developers account lock on 2026-10-14 within minutes. Next concrete step: watch the first real relaunch order in Events Manager. It should show both Browser and Server Purchase, which also confirms the CAPI token survived the account lock.
 
 ---
 
@@ -56,7 +56,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 **Backend / data** (`artifacts/api-server`, Express 5 + TS on Railway)
 - Routes: `account`, `adminLogin`, `checkout`, `labels`, `metrics`, `orders`, `products`, `scryfall`, `shipping`, `subscribers`, `upload`, `webhooks`, `health`.
-- Admin auth (#124, `src/lib/adminAuth.ts`): `POST /api/admin/login` checks a server-only `ADMIN_PASSWORD` (timing-safe, 10 tries per 15 min) and returns an HMAC-signed token (12h). One shared `requireAdmin` accepts only valid tokens; the raw `ADMIN_SECRET` works only with `ADMIN_ACCEPT_LEGACY_KEY=1` (default off).
+- Admin auth (#124, `src/lib/adminAuth.ts`): `POST /api/admin/login` checks a server-only `ADMIN_PASSWORD` (timing-safe, 10 tries per 15 min) and returns an HMAC-signed token (12h). One shared `requireAdmin` accepts only valid tokens; the raw `ADMIN_SECRET` works only with `ADMIN_ACCEPT_LEGACY_KEY=1` (default off). `ADMIN_SECRET` was deliberately not rotated after #124 (owner decision, 2026-10-14; see Risks). `VITE_ADMIN_PASSWORD` is gone from the source and from Vercel (checked with `vercel env ls` on 2026-10-14).
 - Server-side Meta Purchase (#130, `src/lib/metaCapi.ts`): for new, paid, live orders the Stripe webhook sends Purchase to the Meta Conversions API. `event_id` is the Stripe session id, the same key as the GTM tag and the CAPI Gateway, so Meta deduplicates. It sends hashed email, phone, name and address, plus fbp/fbc, client IP and user agent (checkout now stores these in Stripe metadata as `capi_ip`/`capi_ua`). Fail-soft: it never throws. Railway has `META_PIXEL_ID` and `META_CAPI_ACCESS_TOKEN`; `META_TEST_EVENT_CODE` was removed after the live test.
 - Metrics (#125, `src/lib/metrics.ts`, `GET /api/admin/metrics`): Stripe revenue, fees, discounts and refunds; orders, postage and sources from the orders table; Meta insights via `META_ACCESS_TOKEN`; GA4 funnel via `GA4_SERVICE_ACCOUNT_JSON` (#128, `src/lib/ga4.ts`). Test orders on internal emails and fully refunded orders are excluded. Fees count both `charge` and `payment` balance transactions (`feesByCharge`, #131), so Cash App Pay fees show. Per-source cache is 60s and each source returns its synced time (`src/lib/syncCache.ts`, #132).
 - Hand-credited campaign sales (#134): a campaign's Sales = Meta-tracked orders plus orders with `utm_medium=manual` whose `utm_campaign` matches the campaign name or id.
@@ -119,11 +119,11 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 | Integration | Purpose | Cost | Status |
 |---|---|---|---|
 | Stripe | Checkout + webhooks, promo codes, Finance metrics | usage-based | live |
-| Shippo | USPS rates; click-to-buy labels from the sales@ email (#123) | usage-based | live (rates); labels shipped, first real purchase not yet confirmed |
+| Shippo | USPS rates; click-to-buy labels from the sales@ email (#123) | usage-based | live (rates and labels; a real label bought and tested through the sales@ link, owner confirmed 2026-10-14) |
 | Meta Conversions API | Server-side Purchase from the Stripe webhook (#130) | free | live, verified 2026-10-13 |
 | Meta Marketing API | Spend, campaigns, CTR for the Growth page | free | live |
 | Meta Ads | Paid traffic; first campaign $133.88 (2026-09-28 to 2026-10-06) | usage-based | live (relaunch campaign since 2026-10-14) |
-| GA4 Data API | Visitor funnel on Growth (#128) | free | built; live connection not confirmed |
+| GA4 Data API | Visitor funnel on Growth (#128) | free | live (`GA4_SERVICE_ACCOUNT_JSON` set, owner confirmed 2026-10-14) |
 | Resend | Order alert + customer confirmation emails | unknown | live |
 | Supabase | Postgres + customer auth | unknown | live |
 | Google Apps Script | Append orders and signups to a Sheet | free | live |
@@ -140,6 +140,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 ## Decisions log  [append-only, never rewrite or delete]
 
+- **2026-10-14, Keep the current `ADMIN_SECRET` (no rotation after #124)**. Owner's decision. The old frontend sent `VITE_ADMIN_PASSWORD` as `x-admin-key` and the API compared it to `ADMIN_SECRET`, so the value that shipped in the public bundle is `ADMIN_SECRET` itself. Accepted as a known risk instead of rotating and signing everyone out.
 - **2026-10-14, Admin sidebar splits Insights from Store (option B, #135)**. Finance and Growth sit apart from Products, Orders and Waitlist, so reporting and store management don't share one tab row.
 - **2026-10-14, Hand-credit convention for campaign sales (#134)**. To credit an order to a campaign by hand, set `utm_source=meta`, `utm_medium=manual` and `utm_campaign=<exact campaign name or id>`. Growth counts these with Meta-tracked orders. Used for the 2026-09-30 sale, which Meta never saw.
 - **2026-10-14, "Shipped elsewhere" uses an existing column (#133)**. `shippo_transaction_id = 'shipped-elsewhere'` marks orders shipped without a Shippo label, instead of adding a status column. Avoids a migration and blocks label purchase with the same check.
@@ -179,13 +180,10 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 ## Open loops  [rewrite, but carry forward unfinished items]
 
 - [ ] On the first real relaunch order, confirm Events Manager shows Purchase from both Browser and Server with one event id. This also answers whether the 2026-10-14 Meta developer account lock touched the CAPI token. Owner: Finley
-- [ ] Finish the new ad assets for "TTD Relaunch Oct - 14d - Sales". In progress since 2026-10-14.
+- [ ] Finish the new ad assets for "TTD Relaunch Oct - 14d - Sales". In progress since 2026-10-14. Owner: Finley
 - [ ] Review relaunch results on the Growth page (sales, cost per sale, ROAS) against the first campaign's $133.88 spend and 0.32x ROAS. Owner: Finley
-- [ ] Confirm the click-to-buy label flow end to end on a real order: a label bought from the sales@ link, the customer tracking email sent, and the Shippo account has a payment method. Not confirmed in these records. Owner: Finley
-- [ ] Confirm the #124 env steps are done: `ADMIN_SECRET` rotated on Railway, `VITE_ADMIN_PASSWORD` removed from Vercel, `ADMIN_ACCEPT_LEGACY_KEY` unset. Not confirmed in these records. Owner: Finley
-- [ ] Confirm `GA4_SERVICE_ACCOUNT_JSON` is set on Railway and the Growth funnel shows live data. #128 shipped without a live GA4 test. Owner: Finley
-- [ ] Order the printed thank-you cards from the print-ready PDF (#120). Not confirmed as ordered. Owner: Shawn
-- [ ] Place a test checkout with `TOPDECK10` to confirm the discount and the one-use-per-customer check on live Stripe. Not confirmed in these records. Owner: Finley
+- [ ] Confirm `ADMIN_ACCEPT_LEGACY_KEY` is unset on Railway (the last #124 env step; not confirmed). Owner: Finley
+- [ ] Send the thank-you cards to print from the print-ready PDF (#120). Not sent as of 2026-10-14. Owner: Finley
 - [ ] Answer Shawn's 2026-10-03 email about opening a Mercury account and its minimum balance. Owner: Finley
 - [ ] Send bank statements and card info to Lauren for the 2025 books. Owner: Shawn
 - [ ] Send vendor receipts for the 72 units. Owner: Shawn
@@ -203,7 +201,6 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 - **Meta tracking depends on one developer account.** On 2026-10-14 at about 11:45 AM ET the Graph API returned "API access blocked": Meta locked the Meta for Developers account for "unusual activity". Account confirmation restored access at about 11:48 AM ET. Unknown whether the server-side CAPI token was affected; the first real relaunch order will show it.
 - **One real sale so far.** The first campaign spent $133.88 for 1 real sale (ROAS 0.32x). The relaunch has no results yet.
-- **Label flow not proven on a real order.** The first live test (2026-10-13) failed for missing seller phone and email, fixed in #122. No real label purchase through the sales@ link is recorded yet.
 - **Hand-credited sales are manual.** Growth counts `utm_medium=manual` orders toward a campaign only if `utm_campaign` matches its exact name or id. A typo silently drops the credit.
 - **Postage unknown on shipped-elsewhere orders.** Orders marked `shipped-elsewhere` show $0.00 postage, so Finance understates shipping cost for them (#P0RDZARQ today).
 - **Promo check gaps.** One use per customer is keyed on email: a different email gets around it, and two simultaneous checkouts with one email both pass (#118).
@@ -213,7 +210,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 - **Rate limiter limits.** The `POST /tcgplayer/price` limiter lives in process memory: it resets on every deploy and would multiply with replicas. It keys on the rightmost X-Forwarded-For entry, which is only safe if Railway appends its own entry (unconfirmed).
 - **DB host docs conflict.** `README.md` says Railway Postgres. `CLAUDE.md`, the RLS lockdown in `src/index.ts` (written for Supabase's Data API) and PR #1 point to Supabase. Code evidence favors Supabase; the live `DATABASE_URL` wasn't checked.
 - **No migration system.** Schema changes must be idempotent `ALTER TABLE` in the API bootstrap or prod drifts and 500s (this previously caused orders to silently not persist).
-- **Old admin key leaked until rotated.** #124 moved the admin password to the server, but the old `VITE_ADMIN_PASSWORD` value shipped in the public bundle. It stays a risk until `ADMIN_SECRET` is rotated and the Vercel variable is removed (not confirmed in these records).
+- **Leaked admin secret kept on purpose (accepted risk).** The value that shipped in the old public bundle as `VITE_ADMIN_PASSWORD` is `ADMIN_SECRET`, and the owner chose not to rotate it (2026-10-14). Since #124, `ADMIN_SECRET` is also the HMAC key for admin tokens (`src/lib/adminAuth.ts`), so anyone holding the old value could sign a valid 12h admin token, which covers order details, the waitlist and product and price edits. Rotating it would close this and sign everyone out. The variable itself is gone from the source and from Vercel.
 - **Ephemeral uploads.** Server-side uploads land on Railway's local disk and vanish on redeploy; Cloudinary is optional.
 - **Special-printing odds are approximate.** One stated special rate covers all rare/mythic special treatments.
 - **FRONTEND_URL is tied to the Vercel domains.** It feeds the CORS allowlist (all entries) and the Stripe redirect base (first entry). Changing the primary domain on Vercel without updating Railway breaks every API call from the site; this caused the 2026-10-06 outage. Apex is primary, not www.
@@ -244,6 +241,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 ## Changelog  [append-only, never rewrite or delete]
 
+- **2026-10-14:** Recorded the owner's confirmations: Shippo has a payment method and a real label was bought and tested through the sales@ link; `GA4_SERVICE_ACCOUNT_JSON` is set; a `TOPDECK10` test order went through; thank-you cards not sent to print yet (Finley owns it); Finley owns the relaunch ad assets; `ADMIN_SECRET` deliberately not rotated (logged as a decision and an accepted risk). Checked `vercel env ls`: `VITE_ADMIN_PASSWORD` is no longer set on Vercel.
 - **2026-10-14:** Recorded the 2026-10-13 and 2026-10-14 session (#117 to #135, all merged and deployed). Closed #127: no outage, the real gap was the 2026-09-30 Cash App Pay sale; #130 adds server-side Meta CAPI Purchase, verified with a live $40.07 test order (refunded). Added #131 (Cash App Pay fees), #132 (live dashboards and sync pill), #133 (shipped-elsewhere state), #134 (hand-credited campaign sales), #135 (admin sidebar), plus #117 to #129 (TOPDECK10 one use per customer, print-ready card, click-to-buy labels, server-side admin login, Finance and Growth dashboards, GA4 funnel). Recorded first campaign results, Shawn's relaunch approval, the live relaunch campaign and the Meta developer account lock (about 3 minutes). Flag moved from on-track to shipping.
 - **2026-10-07:** Recorded the brand guide (#115, merged: 11 pages, TT card mark palette, game-neutral "Sealed packs. Under market." positioning; Nemat stays internal), three thank-you insert formats with a placeholder 10% code and a UTM-tagged QR (options emailed to Shawn), #114 (Stripe promotion codes, discount line in both emails, 57/57 tests; merged at the owner's request, coupon not yet created; live checkout not checked this run) and #113 (Shippo auto-labels, Option C, blocked on owner inputs). Added the 2026-10-01 check-in loops for Shawn and Lauren, the unanswered Mercury question and a possible shipping under-quote (0.7 oz per unit). Tagline and value prop now game-neutral.
 - **2026-10-06:** Recorded the CORS outage and fix: `FRONTEND_URL` on Railway held only www while the site serves from apex, so the storefront showed a stale $32.00 fallback with no photo. Set it to apex + www and redeployed (config only). The comma-separated value then broke Stripe redirect URLs until #110 took the first entry; checkout was likely failing for about 30 minutes (unconfirmed). Updated the `FRONTEND_URL` docs in `README.md` and `.env.example`. Corrected Links: apex is primary, not www. Live check: TMNT still has empty `possiblePulls`. Verified #110 on prod the same day with an end-to-end test checkout: ZIP 10001 loaded shipping rates (Ground Advantage $6.07, Priority $13.48, Express $49.98), Stripe Checkout showed TMNT $34.00 + $6.07 = $40.07, and Stripe's back arrow (`cancel_url`) returned to the single valid URL https://tommytopdecker.com/checkout?qty=1. Nothing was paid and no order was created.
