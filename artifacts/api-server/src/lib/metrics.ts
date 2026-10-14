@@ -89,6 +89,28 @@ export function classifySource(o: {
 
 // ─── Orders (from Stripe Checkout Sessions) ──────────────────────────────────
 
+/** The fields of a Stripe balance transaction that fee lookup needs. */
+export type FeeTransaction = {
+  type: string;
+  fee: number;
+  source: string | { id: string } | null;
+};
+
+/**
+ * Stripe fee per charge id. Card charges (ch_) post as type "charge"; non-card
+ * methods like Cash App Pay (py_) post as type "payment". Refunds, payouts and
+ * the rest are ignored.
+ */
+export function feesByCharge(transactions: Iterable<FeeTransaction>): Map<string, number> {
+  const out = new Map<string, number>();
+  for (const bt of transactions) {
+    if (bt.type !== "charge" && bt.type !== "payment") continue;
+    const src = typeof bt.source === "string" ? bt.source : bt.source?.id;
+    if (src) out.set(src, bt.fee);
+  }
+  return out;
+}
+
 /** One paid Checkout Session, flattened. Amounts in cents. */
 export type PaidOrder = {
   sessionId: string;
