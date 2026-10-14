@@ -9,6 +9,7 @@ import {
   feesByCharge,
   isInternalEmail,
   labelState,
+  withCreditedSales,
   parseMetaInsights,
   parseRange,
   purchasesFrom,
@@ -213,4 +214,27 @@ test("labelState: bought, shipped without a label, or not yet", () => {
   assert.equal(labelState("pending"), "none");
   assert.equal(labelState("shipped-elsewhere"), "shipped");
   assert.equal(labelState("8f1e2d3c4b5a"), "bought");
+});
+
+test("withCreditedSales adds hand-credited orders to the matching campaign only", () => {
+  const camp = (id: string, name: string, purchases: number) => ({
+    id, name, status: "COMPLETED", state: "ended" as const, statusLabel: "Ended Oct 6",
+    endsAt: null, spendCents: 13388, ctr: 4.9, purchases,
+  });
+  const order = (id: string, email = "buyer@example.com", refundedCents = 0) => ({
+    sessionId: id, created: new Date("2026-09-30T22:10:59Z"), email, totalCents: 4307,
+    discountCents: 0, refundedCents, feeCents: 155, chargeId: null,
+  });
+  const extra = (creditedCampaign: string | null) => ({ labelCostCents: null, label: "none" as const, source: "Meta" as const, creditedCampaign });
+  const campaigns = [camp("120249", "TTD Nemat - TMNT Collector - Sales", 0), camp("999", "Other", 2)];
+  const orders = [order("cs_a"), order("cs_b"), order("cs_test", "finley@qsbsrollover.com"), order("cs_refunded", "x@example.com", 4307)];
+  const extras = new Map([
+    ["cs_a", extra(" ttd nemat - tmnt collector - sales ")],
+    ["cs_b", extra(null)],
+    ["cs_test", extra("TTD Nemat - TMNT Collector - Sales")],
+    ["cs_refunded", extra("120249")],
+  ]);
+  const out = withCreditedSales(campaigns, orders, extras);
+  assert.deepEqual(out.map((c) => c.purchases), [1, 2]);
+  assert.equal(campaigns[0].purchases, 0, "cached input is not mutated");
 });

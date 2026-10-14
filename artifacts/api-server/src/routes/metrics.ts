@@ -9,6 +9,7 @@ import {
   daysBetween,
   feesByCharge,
   labelState,
+  withCreditedSales,
   parseMetaInsights,
   parseRange,
   summarizeOrders,
@@ -87,6 +88,8 @@ async function loadOrderExtras(): Promise<Map<string, OrderExtras>> {
       utmSource: ordersTable.utmSource,
       fbclid: ordersTable.fbclid,
       fbc: ordersTable.fbc,
+      utmMedium: ordersTable.utmMedium,
+      utmCampaign: ordersTable.utmCampaign,
     })
     .from(ordersTable);
   return new Map(
@@ -96,6 +99,7 @@ async function loadOrderExtras(): Promise<Map<string, OrderExtras>> {
         labelCostCents: r.labelCostCents,
         label: labelState(r.shippoTransactionId),
         source: classifySource(r),
+        creditedCampaign: r.utmMedium === "manual" ? r.utmCampaign : null,
       },
     ]),
   );
@@ -158,12 +162,25 @@ router.get("/admin/metrics", requireAdmin, async (req, res) => {
     : new Date(range.end.getTime() - 29 * 86_400_000);
   const days = daysBetween(range.start ?? first, range.end);
 
-  const finance: Block<FinanceSummary> = orders.ok
-    ? await block(async () => summarizeOrders(orders.list, await loadOrderExtras(), days), "orders")
-    : orders;
+  const extras = await loadOrderExtras().catch((err) => {
+    console.error("[admin/metrics] orders failed:", err);
+    return err as Error;
+  });
 
+  const finance: Block<FinanceSummary> = !orders.ok
+    ? orders
+    : extras instanceof Error
+      ? { ok: false, error: extras.message || "orders failed" }
+      : await block(async () => summarizeOrders(orders.list, extras, days), "orders");
+
+  // Campaign sales add orders credited by hand to what Meta tracked.
   const meta: Block<MetaSummary> | null = process.env.META_ACCESS_TOKEN
-    ? await block(() => track("meta", `meta:${range.key}`, () => loadMeta(range, days)), "meta")
+    ? await block(async () => {
+        const m = await track("meta", `meta:${range.key}`, () => loadMeta(range, days));
+        return orders.ok && !(extras instanceof Error)
+          ? { ...m, campaigns: withCreditedSales(m.campaigns, orders.list, extras) }
+          : m;
+      }, "meta")
     : null;
 
   const ga4: Block<Ga4Summary> | null = process.env.GA4_SERVICE_ACCOUNT_JSON
