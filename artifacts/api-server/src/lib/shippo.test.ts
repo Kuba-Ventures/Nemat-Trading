@@ -44,3 +44,13 @@ test("pickRate uses the cheapest USPS rate, flagged, when nothing matches", () =
 test("pickRate never picks a non-USPS rate and returns null without USPS", () => {
   assert.equal(pickRate([RATES[2]], {}), null);
 });
+
+test("fromAddress sends the seller phone and email USPS requires", async () => {
+  process.env.SHIP_FROM_PHONE = "5550101234";
+  process.env.SHIP_FROM_EMAIL = "seller@example.com";
+  const { fromAddress } = await import("./shippo");
+  assert.equal(fromAddress().phone, "5550101234");
+  assert.equal(fromAddress().email, "seller@example.com");
+  delete process.env.SHIP_FROM_EMAIL;
+  assert.equal(fromAddress().email, "sales@tommytopdecker.com");
+});

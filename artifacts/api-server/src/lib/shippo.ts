@@ -35,7 +35,10 @@ export function fromAddress() {
     state: process.env.SHIP_FROM_STATE ?? "CA",
     zip: ORIGIN_ZIP,
     country: "US",
-    ...(process.env.SHIP_FROM_PHONE ? { phone: process.env.SHIP_FROM_PHONE } : {}),
+    // USPS rejects the label without a seller phone and email. Set both on
+    // Railway; they're personal contact details, so they stay out of this repo.
+    phone: process.env.SHIP_FROM_PHONE ?? "",
+    email: process.env.SHIP_FROM_EMAIL ?? "sales@tommytopdecker.com",
   };
 }
 
@@ -118,6 +121,7 @@ export async function buyLabel(opts: {
   const token = process.env.SHIPPO_API_TOKEN;
   if (!token) return { ok: false, reason: "SHIPPO_API_TOKEN is not set" };
   if (!opts.to.street1 || !opts.to.zip) return { ok: false, reason: "Order has no shipping address" };
+  if (!process.env.SHIP_FROM_PHONE) return { ok: false, reason: "SHIP_FROM_PHONE is not set on Railway (USPS requires a seller phone)" };
 
   try {
     const shipment = await shippo<{ rates?: ShippoRate[]; messages?: Array<{ text?: string }> }>(
