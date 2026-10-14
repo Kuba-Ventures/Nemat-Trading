@@ -1,6 +1,8 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
+  campaignEnd,
+  campaignStatus,
   classifySource,
   dayKey,
   daysBetween,
@@ -146,5 +148,44 @@ test("parseMetaInsights merges insights, status and daily spend", () => {
     { date: "2026-09-28", spendCents: 2010 },
     { date: "2026-09-29", spendCents: 1950 },
     { date: "2026-09-30", spendCents: 0 },
+  ]);
+});
+
+test("campaignStatus: a passed end date wins over ACTIVE, paused and completed map cleanly", () => {
+  assert.deepEqual(campaignStatus("ACTIVE", "2026-10-06T23:59:00-0700", NOW), { state: "ended", label: "Ended Oct 6" });
+  assert.deepEqual(campaignStatus("ACTIVE", "2026-10-20T00:00:00-0700", NOW), { state: "active", label: "Active" });
+  assert.deepEqual(campaignStatus("ACTIVE", null, NOW), { state: "active", label: "Active" });
+  assert.deepEqual(campaignStatus("CAMPAIGN_PAUSED", "2026-10-06T23:59:00-0700", NOW), { state: "paused", label: "Paused" });
+  assert.deepEqual(campaignStatus("PAUSED", null, NOW), { state: "paused", label: "Paused" });
+  assert.deepEqual(campaignStatus("COMPLETED", null, NOW), { state: "ended", label: "Ended" });
+  assert.deepEqual(campaignStatus("ARCHIVED", null, NOW), { state: "other", label: "Archived" });
+});
+
+test("campaignEnd: stop_time, else the latest ad set end only when every ad set has one", () => {
+  assert.equal(campaignEnd({ stop_time: "2026-10-06T23:59:00-0700" }), "2026-10-06T23:59:00-0700");
+  assert.equal(
+    campaignEnd({ adsets: { data: [{ end_time: "2026-10-01T00:00:00-0700" }, { end_time: "2026-10-06T23:59:00-0700" }] } }),
+    "2026-10-06T23:59:00-0700",
+  );
+  assert.equal(campaignEnd({ adsets: { data: [{ end_time: "2026-10-06T23:59:00-0700" }, {}] } }), null);
+  assert.equal(campaignEnd({}), null);
+});
+
+test("parseMetaInsights shows an ACTIVE campaign past its end date as ended, after running ones", () => {
+  const m = parseMetaInsights(
+    { data: [{ campaign_id: "1", campaign_name: "TMNT", spend: "133.88" }] },
+    { data: [] },
+    {
+      data: [
+        { id: "1", name: "TMNT", effective_status: "ACTIVE", adsets: { data: [{ end_time: "2026-10-06T23:59:00-0700" }] } },
+        { id: "2", name: "Relaunch", effective_status: "ACTIVE" },
+      ],
+    },
+    [],
+    NOW,
+  );
+  assert.deepEqual(m.campaigns.map((c) => [c.id, c.state, c.statusLabel]), [
+    ["2", "active", "Active"],
+    ["1", "ended", "Ended Oct 6"],
   ]);
 });

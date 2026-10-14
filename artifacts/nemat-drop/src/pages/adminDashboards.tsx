@@ -27,7 +27,24 @@ type Finance = {
 type Meta = {
   spendCents: number;
   daily: { date: string; spendCents: number }[];
-  campaigns: { id: string; name: string; status: string; spendCents: number; ctr: number | null; purchases: number }[];
+  campaigns: {
+    id: string;
+    name: string;
+    status: string;
+    state: "active" | "ended" | "paused" | "other";
+    statusLabel: string;
+    endsAt: string | null;
+    spendCents: number;
+    ctr: number | null;
+    purchases: number;
+  }[];
+};
+
+type Ga4 = {
+  sessions: number;
+  steps: { label: string; sessions: number; pctOfPrevious: number | null }[];
+  conversion: number | null;
+  daily: { date: string; sessions: number }[];
 };
 
 type Block<T> = ({ ok: true } & T) | { ok: false; error: string };
@@ -38,6 +55,7 @@ export type Metrics = {
   generatedAt: string;
   finance: Block<Finance>;
   meta: Block<Meta> | null;
+  ga4: Block<Ga4> | null;
 };
 
 export type MetricsLoader = (range: string) => Promise<Metrics>;
@@ -79,17 +97,11 @@ const shortDay = (d: string) =>
 
 const ratio = (num: number, den: number | null | undefined) => (den ? num / den : null);
 
-const STATUS_LABEL: Record<string, string> = {
-  ACTIVE: "Active",
-  PAUSED: "Paused",
-  CAMPAIGN_PAUSED: "Paused",
-  ADSET_PAUSED: "Paused",
-  COMPLETED: "Ended",
-  ARCHIVED: "Archived",
-  IN_PROCESS: "Starting",
-  WITH_ISSUES: "Issues",
-  DISAPPROVED: "Rejected",
-  PENDING_REVIEW: "In review",
+const STATUS_DOT: Record<Meta["campaigns"][number]["state"], string> = {
+  active: "bg-emerald-500",
+  paused: "bg-amber-500",
+  ended: "bg-gray-500",
+  other: "bg-gray-500",
 };
 
 // ─── Data hook ────────────────────────────────────────────────────────────────
@@ -417,6 +429,57 @@ export function FinanceDashboard({ load }: { load: MetricsLoader }) {
 
 // ─── Growth ───────────────────────────────────────────────────────────────────
 
+function VisitorFunnel({ ga4 }: { ga4: Block<Ga4> | null }) {
+  if (ga4 == null) {
+    return (
+      <div>
+        <p className="text-sm text-gray-300">Connect GA4 to see where visitors drop off:</p>
+        <ul className="mt-2 space-y-1 text-sm text-gray-500">
+          <li>Site visits</li>
+          <li>Viewed the pack</li>
+          <li>Started checkout</li>
+          <li>Purchased</li>
+        </ul>
+        <p className="mt-3 text-xs text-gray-500">
+          Needs GA4_SERVICE_ACCOUNT_JSON on the server (a service account with Viewer on GA4 property 541136891).
+        </p>
+      </div>
+    );
+  }
+  if (!ga4.ok) return <CardError message={ga4.error} />;
+  if (!ga4.sessions) return <p className="text-sm text-gray-500">No site visits recorded in this range.</p>;
+
+  const top = ga4.steps[0]?.sessions || 1;
+  return (
+    <div>
+      <ul className="space-y-3">
+        {ga4.steps.map((s) => (
+          <li key={s.label}>
+            <div className="grid grid-cols-[minmax(0,7.5rem)_1fr_auto] items-center gap-3 text-sm">
+              <span className="text-gray-300">{s.label}</span>
+              <div className="h-5" role="img" aria-label={`${s.label}: ${s.sessions.toLocaleString()} sessions`}>
+                <div
+                  className="h-full rounded-r"
+                  style={{ width: `${Math.max(1.5, (s.sessions / top) * 100)}%`, background: COLOR.revenue }}
+                />
+              </div>
+              <span className="tabular-nums text-white">{s.sessions.toLocaleString()}</span>
+            </div>
+            {s.pctOfPrevious != null && (
+              <p className="ml-[calc(7.5rem+0.75rem)] mt-0.5 text-[11px] text-gray-500">
+                {s.pctOfPrevious < 10 ? s.pctOfPrevious.toFixed(1) : Math.round(s.pctOfPrevious)}% of previous step
+              </p>
+            )}
+          </li>
+        ))}
+      </ul>
+      <p className="mt-4 border-t border-white/5 pt-3 text-xs text-gray-400">
+        Conversion {ga4.conversion == null ? "-" : `${ga4.conversion.toFixed(1)}%`} of sessions purchased. Sessions from GA4.
+      </p>
+    </div>
+  );
+}
+
 export function GrowthDashboard({ load }: { load: MetricsLoader }) {
   return (
     <Shell title="Growth" load={load}>
@@ -454,14 +517,7 @@ export function GrowthDashboard({ load }: { load: MetricsLoader }) {
                 {meta == null && <p className="mt-2 text-xs text-gray-500">Ad spend appears here once Meta is connected.</p>}
               </Card>
               <Card title="Visitor funnel">
-                <p className="text-sm text-gray-300">Connect GA4 to see where visitors drop off:</p>
-                <ul className="mt-2 space-y-1 text-sm text-gray-500">
-                  <li>Site visits</li>
-                  <li>Viewed the pack</li>
-                  <li>Started checkout</li>
-                  <li>Purchased</li>
-                </ul>
-                <p className="mt-3 text-xs text-gray-500">Needs a GA4 service account with read access.</p>
+                <VisitorFunnel ga4={m.ga4} />
               </Card>
             </div>
 
@@ -491,14 +547,13 @@ export function GrowthDashboard({ load }: { load: MetricsLoader }) {
                       </thead>
                       <tbody>
                         {meta.campaigns.map((c) => {
-                          const active = c.status === "ACTIVE";
                           return (
                             <tr key={c.id} className="border-t border-white/5">
                               <td className="py-2 pr-3 text-white">{c.name}</td>
                               <td className="py-2">
                                 <span className="inline-flex items-center gap-1.5 rounded-full border border-white/10 px-2 py-0.5 text-[11px] text-gray-300">
-                                  <i className={`inline-block h-1.5 w-1.5 rounded-full ${active ? "bg-emerald-500" : "bg-gray-500"}`} />
-                                  {STATUS_LABEL[c.status] ?? c.status.toLowerCase()}
+                                  <i className={`inline-block h-1.5 w-1.5 rounded-full ${STATUS_DOT[c.state] ?? "bg-gray-500"}`} />
+                                  {c.statusLabel}
                                 </span>
                               </td>
                               <td className="py-2 text-right tabular-nums text-white">{money(c.spendCents)}</td>

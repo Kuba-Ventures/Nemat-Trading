@@ -15,10 +15,11 @@ import {
   type PaidOrder,
   type Range,
 } from "../lib/metrics";
+import { loadGa4Funnel, type Ga4Summary } from "../lib/ga4";
 
 // GET /api/admin/metrics?range=7d|14d|30d|all
 // One payload for the admin Finance and Growth pages. Each source fails on its
-// own: a Stripe or Meta outage shows as an error on its cards, never a blank page.
+// own: a Stripe, Meta or GA4 outage shows as an error on its cards, never a blank page.
 // Results are cached in memory for 5 minutes per range.
 
 const router = Router();
@@ -130,7 +131,7 @@ async function loadMeta(range: Range, days: string[]): Promise<MetaSummary> {
   const [byCampaign, byDay, list] = await Promise.all([
     graph<any>(`${account}/insights`, { level: "campaign", fields: "campaign_id,campaign_name,spend,ctr,actions", limit: "100", ...when }, token),
     graph<any>(`${account}/insights`, { fields: "spend", time_increment: "1", limit: "500", ...when }, token),
-    graph<any>(`${account}/campaigns`, { fields: "name,effective_status", limit: "100" }, token),
+    graph<any>(`${account}/campaigns`, { fields: "name,effective_status,stop_time,adsets.limit(50){end_time}", limit: "100" }, token),
   ]);
   return parseMetaInsights(byCampaign, byDay, list, days);
 }
@@ -160,12 +161,17 @@ router.get("/admin/metrics", requireAdmin, async (req, res) => {
     ? await block(() => cached(`meta:${range.key}`, () => loadMeta(range, days)), "meta")
     : null;
 
+  const ga4: Block<Ga4Summary> | null = process.env.GA4_SERVICE_ACCOUNT_JSON
+    ? await block(() => cached(`ga4:${range.key}:${days[0]}`, () => loadGa4Funnel(days)), "ga4")
+    : null;
+
   res.set("Cache-Control", "no-store").json({
     range: { key: range.key, start: range.start?.toISOString() ?? null, end: range.end.toISOString() },
     days,
     generatedAt: new Date().toISOString(),
     finance,
     meta,
+    ga4,
   });
 });
 
