@@ -11,7 +11,9 @@ import {
   costPerSale,
   ctrChip,
   keptCents,
+  isSendDay,
   lastSendSlot,
+  sendsStarted,
   rangeLabel,
   snapshotWindows,
   trendChip,
@@ -32,40 +34,57 @@ const week = (over: Partial<WeekNumbers> = {}): WeekNumbers => ({
   ...over,
 });
 
-test("lastSendSlot: Friday before 4 PM PT is still last week's slot", () => {
-  // Fri Oct 23 2026, 3:59 PM PDT = 22:59 UTC
-  const slot = lastSendSlot(new Date("2026-10-23T22:59:00Z"));
-  assert.equal(slot.toISOString(), "2026-10-16T23:00:00.000Z");
+test("isSendDay: the anchor and every 14 days either side", () => {
+  assert.equal(isSendDay("2026-10-30"), true);
+  assert.equal(isSendDay("2026-11-13"), true);
+  assert.equal(isSendDay("2026-11-27"), true);
+  assert.equal(isSendDay("2026-10-16"), true); // on the cycle, but before sends start
+  assert.equal(isSendDay("2026-11-06"), false);
+  assert.equal(isSendDay("2026-10-23"), false);
 });
 
-test("lastSendSlot: at and after Friday 4 PM PT it's this week's slot", () => {
-  assert.equal(lastSendSlot(new Date("2026-10-23T23:00:00Z")).toISOString(), "2026-10-23T23:00:00.000Z");
-  // Tue Oct 27 still points at Fri Oct 23
-  assert.equal(lastSendSlot(new Date("2026-10-27T18:00:00Z")).toISOString(), "2026-10-23T23:00:00.000Z");
+test("sendsStarted: nothing goes out before Oct 30 2026", () => {
+  assert.equal(sendsStarted("2026-10-16"), false);
+  assert.equal(sendsStarted("2026-10-30"), true);
+  assert.equal(sendsStarted("2026-11-13"), true);
+});
+
+test("lastSendSlot: before 4 PM PT on a send Friday it's still the previous one", () => {
+  // Fri Oct 30 2026, 3:59 PM PDT = 22:59 UTC
+  assert.equal(lastSendSlot(new Date("2026-10-30T22:59:00Z")).toISOString(), "2026-10-16T23:00:00.000Z");
+});
+
+test("lastSendSlot: at 4 PM PT on a send Friday, and through the off Friday after", () => {
+  assert.equal(lastSendSlot(new Date("2026-10-30T23:00:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
+  // Fri Nov 6 is an off week: still points at Oct 30
+  assert.equal(lastSendSlot(new Date("2026-11-07T01:00:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
 });
 
 test("lastSendSlot: after DST ends, 4 PM PST is 00:00 UTC Saturday", () => {
-  // DST ends Sun Nov 1 2026. Fri Nov 6, 4 PM PST = Sat Nov 7 00:00 UTC
-  assert.equal(lastSendSlot(new Date("2026-11-07T01:00:00Z")).toISOString(), "2026-11-07T00:00:00.000Z");
+  // DST ends Sun Nov 1 2026. Fri Nov 13, 4 PM PST = Sat Nov 14 00:00 UTC
+  assert.equal(lastSendSlot(new Date("2026-11-14T01:00:00Z")).toISOString(), "2026-11-14T00:00:00.000Z");
+  assert.equal(lastSendSlot(new Date("2026-11-13T23:59:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
 });
 
-test("snapshotWindows: Friday to Thursday before the send, and the week before that", () => {
-  const { week: w, prior, key } = snapshotWindows(new Date("2026-10-23T23:00:00Z"));
-  assert.equal(key, "2026-10-23");
-  assert.deepEqual(w.days, ["2026-10-16", "2026-10-17", "2026-10-18", "2026-10-19", "2026-10-20", "2026-10-21", "2026-10-22"]);
+test("snapshotWindows: the 14 days before the send Friday, and the 14 before that", () => {
+  const { week: w, prior, key } = snapshotWindows(new Date("2026-10-30T23:00:00Z"));
+  assert.equal(key, "2026-10-30");
+  assert.equal(w.days.length, 14);
+  assert.equal(w.days[0], "2026-10-16");
+  assert.equal(w.days[13], "2026-10-29");
   assert.equal(w.start.toISOString(), "2026-10-16T07:00:00.000Z"); // midnight PDT
-  assert.equal(w.end.toISOString(), "2026-10-23T06:59:59.999Z");
-  assert.equal(prior.days[0], "2026-10-09");
-  assert.equal(prior.days[6], "2026-10-15");
-  assert.equal(rangeLabel(w), "Oct 16 to Oct 22");
+  assert.equal(w.end.toISOString(), "2026-10-30T06:59:59.999Z");
+  assert.equal(prior.days[0], "2026-10-02");
+  assert.equal(prior.days[13], "2026-10-15");
+  assert.equal(rangeLabel(w), "Oct 16 to Oct 29");
 });
 
-test("snapshotWindows: a week spanning the DST change still has 7 days", () => {
-  const { week: w } = snapshotWindows(new Date("2026-11-07T00:00:00Z"));
-  assert.equal(w.days.length, 7);
+test("snapshotWindows: a period spanning the DST change still has 14 days", () => {
+  const { week: w } = snapshotWindows(new Date("2026-11-14T00:00:00Z"));
+  assert.equal(w.days.length, 14);
   assert.equal(w.days[0], "2026-10-30");
-  assert.equal(w.days[6], "2026-11-05");
-  assert.equal(w.end.toISOString(), "2026-11-06T07:59:59.999Z"); // midnight PST
+  assert.equal(w.days[13], "2026-11-12");
+  assert.equal(w.end.toISOString(), "2026-11-13T07:59:59.999Z"); // midnight PST
 });
 
 test("costPerSale, checkoutRate and keptCents", () => {
@@ -119,14 +138,14 @@ test("bestAd: most sales, then click rate, ignoring ads under $5", () => {
 });
 
 const sample = (): SnapshotData => {
-  const { week: w, prior } = snapshotWindows(new Date("2026-10-23T23:00:00Z"));
+  const { week: w, prior } = snapshotWindows(new Date("2026-10-30T23:00:00Z"));
   return {
     week: w,
     prior,
     thisWeek: week(),
     lastWeek: week({ revenueCents: 0, orders: 0, feeCents: 0, spendCents: 0, ctr: null, checkoutSessions: 12 }),
-    dailyRevenueCents: [0, 0, 4307, 0, 0, 0, 0],
-    dailySpendCents: [750, 560, 2240, 800, 1500, 3800, 3738],
+    dailyRevenueCents: [0, 0, 4307, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0],
+    dailySpendCents: [750, 560, 2240, 800, 1500, 3800, 3738, 0, 0, 0, 0, 0, 0, 0],
     adSets: [
       { name: "Prospecting", spendCents: 10710, purchases: 1 },
       { name: "Retargeting", spendCents: 2678, purchases: 0 },
@@ -140,8 +159,8 @@ const sample = (): SnapshotData => {
 
 test("buildSnapshotEmail: subject, scorecard values and campaign block", () => {
   const e = buildSnapshotEmail(sample());
-  assert.equal(e.subject, "Tommy Top Decker weekly scorecard: Oct 16 to Oct 22");
-  for (const s of ["$43.07", "$133.88", "Off target", "4.9%", "-$92.36", "Prospecting: $107.10, 1 sale", "Best ad: Price Drop counter", "vs. Oct 9 to Oct 15", "https://tommytopdecker.com/admin"]) {
+  assert.equal(e.subject, "Tommy Top Decker scorecard: Oct 16 to Oct 29");
+  for (const s of ["$43.07", "$133.88", "Off target", "4.9%", "-$92.36", "Prospecting: $107.10, 1 sale", "Best ad: Price Drop counter", "vs. Oct 2 to Oct 15", "Sent every other Friday", "https://tommytopdecker.com/admin"]) {
     assert.ok(e.html.includes(s), `html missing ${s}`);
   }
   assert.ok(e.text.includes("Cost per sale (target $40): $133.88"));

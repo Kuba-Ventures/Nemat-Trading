@@ -1,8 +1,8 @@
-// Loads live data for the weekly snapshot email, sends it, and runs the Friday
-// schedule. Off unless WEEKLY_SNAPSHOT_TO is set (comma-separated addresses).
+// Loads live data for the scorecard email, sends it, and runs the every-other-
+// Friday schedule. Off unless WEEKLY_SNAPSHOT_TO is set (comma-separated addresses).
 //
-// The server checks every 10 minutes. Once the Friday 4 PM PT slot has passed,
-// the first check claims that week in the weekly_snapshots table and sends, so a
+// The server checks every 10 minutes. Once a send Friday's 4 PM PT slot has passed,
+// the first check claims that Friday in the weekly_snapshots table and sends, so a
 // restart or a second replica never sends twice. Resend's idempotency key is a
 // second guard. A failed send releases the claim and is retried on the next check.
 
@@ -14,6 +14,7 @@ import { loadGa4Funnel } from "./ga4";
 import {
   buildSnapshotEmail,
   lastSendSlot,
+  sendsStarted,
   snapshotWindows,
   type AdRow,
   type AdSetRow,
@@ -23,7 +24,7 @@ import {
 } from "./weeklySnapshot";
 
 const CHECK_EVERY_MS = 10 * 60 * 1000;
-// Don't send a stale snapshot: if the server was down past Saturday 4 PM, skip that week.
+// Don't send a stale snapshot: if the server was down past Saturday 4 PM, skip that one.
 const SEND_WITHIN_MS = 24 * 60 * 60 * 1000;
 const DEFAULT_FROM = "Tommy Top Decker <orders@tommytopdecker.com>";
 const DEFAULT_TARGET_CENTS = 4000;
@@ -76,7 +77,7 @@ function shortName(name: string | undefined): string {
 async function loadWeek(w: Window, problems: Set<string>): Promise<{ n: WeekNumbers; dailyRevenue: number[]; meta: MetaWeek | null }> {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) throw new Error("STRIPE_SECRET_KEY not set");
-  const range: Range = { key: "7d", start: w.start, end: w.end };
+  const range: Range = { key: "14d", start: w.start, end: w.end };
   const [orders, extras] = await Promise.all([loadStripeOrders(new Stripe(stripeKey), range), loadOrderExtras()]);
   const inWeek = orders.filter((o) => o.created.getTime() <= w.end.getTime());
   const f = summarizeOrders(inWeek, extras, w.days);
@@ -173,19 +174,20 @@ export async function sendSnapshot(slot: Date, to: string[], idempotencyKey: str
   }
 }
 
-/** One scheduler tick: send this week's snapshot if it's due and not yet claimed. */
+/** One scheduler tick: send this Friday's scorecard if it's due and not yet claimed. */
 export async function runWeeklySnapshot(now = new Date()): Promise<void> {
   const to = snapshotRecipients();
   if (!to.length) return; // off until recipients are configured
   const slot = lastSendSlot(now);
   if (now.getTime() - slot.getTime() > SEND_WITHIN_MS) return;
   const { key } = snapshotWindows(slot);
+  if (!sendsStarted(key)) return; // first send is ANCHOR_SEND_DAY
 
   const claim = await pool.query(
     "INSERT INTO weekly_snapshots (week) VALUES ($1) ON CONFLICT (week) DO NOTHING RETURNING week",
     [key],
   );
-  if (!claim.rowCount) return; // already sent (or being sent) this week
+  if (!claim.rowCount) return; // already sent (or being sent) for this Friday
 
   const ok = await sendSnapshot(slot, to, `weekly-snapshot-${key}`);
   if (ok) {
@@ -202,7 +204,7 @@ export function startWeeklySnapshotScheduler(): void {
   const recipients = snapshotRecipients();
   console.log(
     recipients.length
-      ? `[weekly-snapshot] on, Fridays 4 PM PT to ${recipients.join(", ")}`
+      ? `[weekly-snapshot] on, every other Friday 4 PM PT to ${recipients.join(", ")}`
       : "[weekly-snapshot] off (set WEEKLY_SNAPSHOT_TO to turn it on)",
   );
   const tick = () => runWeeklySnapshot().catch((err) => console.error("[weekly-snapshot] tick failed:", err));

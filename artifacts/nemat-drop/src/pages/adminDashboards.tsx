@@ -561,7 +561,7 @@ function VisitorFunnel({ ga4 }: { ga4: Block<Ga4> | null }) {
   );
 }
 
-// ─── Weekly email ─────────────────────────────────────────────────────────────
+// ─── Scorecard email ──────────────────────────────────────────────────────────
 
 export type WeeklyEmail = { subject: string; html: string; recipients: string[] };
 export type WeeklyEmailApi = {
@@ -569,7 +569,7 @@ export type WeeklyEmailApi = {
   sendTest: (to: string) => Promise<void>;
 };
 
-// The Friday scorecard email (api-server lib/weeklySnapshot.ts): who gets it,
+// The every-other-Friday scorecard email (api-server lib/weeklySnapshot.ts): who gets it,
 // a preview of the latest one, and a test send to a team address.
 function WeeklyEmailCard({ api }: { api: WeeklyEmailApi }) {
   const [email, setEmail] = useState<WeeklyEmail | null>(null);
@@ -606,9 +606,9 @@ function WeeklyEmailCard({ api }: { api: WeeklyEmailApi }) {
 
   const recipients = email?.recipients;
   return (
-    <Card title="Weekly email">
+    <Card title="Scorecard email">
       <p className="text-sm text-gray-300">
-        A scorecard of the last 7 days goes out every Friday at 4 PM PT
+        A scorecard of the last 2 weeks goes out every other Friday at 4 PM PT
         {recipients == null ? "." : recipients.length ? ` to ${recipients.join(", ")}.` : ", once recipients are set on the server (WEEKLY_SNAPSHOT_TO)."}
       </p>
       <div className="mt-3 flex flex-wrap items-center gap-2">
@@ -640,7 +640,7 @@ function WeeklyEmailCard({ api }: { api: WeeklyEmailApi }) {
       {open && email && (
         <div className="mt-3">
           <p className="mb-2 text-xs text-gray-500">Subject: {email.subject}</p>
-          <iframe title="Weekly email preview" srcDoc={email.html} className="h-[900px] w-full max-w-[640px] rounded-md bg-white" />
+          <iframe title="Scorecard email preview" srcDoc={email.html} className="h-[900px] w-full max-w-[640px] rounded-md bg-white" />
         </div>
       )}
     </Card>
