@@ -80,7 +80,10 @@ Set these in the Railway service's "Variables" panel.
 | `STRIPE_SECRET_KEY` | **Yes** | Stripe secret key used to create Checkout Sessions and retrieve session details. Use `sk_test_…` in staging, `sk_live_…` in production. | [dashboard.stripe.com/apikeys](https://dashboard.stripe.com/apikeys) |
 | `STRIPE_WEBHOOK_SECRET` | **Yes** | Signing secret for verifying incoming Stripe webhook events. Webhooks will be rejected without this. | Stripe dashboard → Developers → Webhooks → your endpoint → Signing secret |
 | `SHIPPO_API_TOKEN` | **Yes** | Authenticates requests to the Shippo API for USPS rate quotes and rate re-validation at checkout. | [goshippo.com](https://goshippo.com) → API |
-| `ADMIN_SECRET` | **Yes** | Arbitrary secret string checked via the `x-admin-key` request header on all `/api/admin/*` endpoints. Choose a strong random value. | Generate with `openssl rand -hex 32` |
+| `ADMIN_SECRET` | **Yes** | Signs the 12-hour admin session tokens that `/admin` sends as `x-admin-key` on every admin endpoint. Rotating it signs everyone out. Never put it in the frontend. | Generate with `openssl rand -hex 32` |
+| `ADMIN_PASSWORD` | **Yes** | The `/admin` login password. Checked server-side by `POST /api/admin/login` (rate limited), which returns a signed token. | Choose a strong password |
+| `ADMIN_ACCEPT_LEGACY_KEY` | Optional | Set to `1` only during a rollout to also accept the raw `ADMIN_SECRET` as `x-admin-key`. Off by default; remove it afterwards. | `1` or unset |
+| `LABEL_LINK_SECRET` | **Yes** | Signs the "Buy label" links in sales@ order emails. Falls back to `ADMIN_SECRET` if unset. | Generate with `openssl rand -hex 32` |
 | `FRONTEND_URL` | **Yes** | Comma-separated list of frontend origins. Every entry goes into the API's CORS allowlist; the first entry is the base for Stripe's `success_url` and `cancel_url` redirects. List the primary domain first and include both apex and www, or browsers on the missing origin get CORS errors. | Your Vercel domains, e.g. `https://tommytopdecker.com,https://www.tommytopdecker.com` |
 | `SHEETS_WEBHOOK_URL` | Optional | Full URL of the deployed Google Apps Script web app. When set, new subscribers and completed orders are appended to the linked Google Sheet. Silently skipped if absent. | Deploy the Apps Script as a web app → copy the URL |
 | `SHEETS_WEBHOOK_SECRET` | Optional | Shared secret sent in the request body to the Apps Script endpoint for basic authentication. Must match the constant defined in the Apps Script source. | Choose a value and set the same value in the Apps Script |
@@ -99,7 +102,6 @@ Set these in the Vercel project's "Environment Variables" panel. All must be pre
 | Variable | Required | Description | How to get it |
 |---|---|---|---|
 | `VITE_API_URL` | **Yes** | Full base URL of the Railway API server (no trailing slash). Every API call in the frontend is prefixed with this. | Your Railway service's public URL, e.g. `https://api.tommytopdecker.com` |
-| `VITE_ADMIN_PASSWORD` | **Yes** | Password checked client-side on the `/admin` page before rendering admin UI. This is a lightweight gate — it is not a substitute for server-side auth on the admin endpoints (which use `ADMIN_SECRET` via `x-admin-key`). | Choose any value; set `ADMIN_SECRET` to a separate independent value on the server |
 | `VITE_CLOUDINARY_CLOUD_NAME` | Optional | Cloudinary cloud name for direct browser-to-Cloudinary image uploads in the admin panel. If unset, the admin image upload UI falls back to the server-side upload endpoint (`/api/admin/upload`). | [cloudinary.com](https://cloudinary.com) → Dashboard |
 | `VITE_CLOUDINARY_UPLOAD_PRESET` | Optional | Cloudinary unsigned upload preset name. Required if `VITE_CLOUDINARY_CLOUD_NAME` is set. | Cloudinary → Settings → Upload → Upload presets |
 
@@ -206,7 +208,7 @@ Config:
 
 ## Known issues / gotchas
 
-- **Admin password is client-side only.** `VITE_ADMIN_PASSWORD` is compiled into the browser bundle and is visible to anyone who inspects the JS. The real security for admin mutations is `ADMIN_SECRET` on the server side. Do not rely on `VITE_ADMIN_PASSWORD` for anything sensitive.
+- **Admin sessions last 12 hours and live in sessionStorage.** Closing the tab or rotating `ADMIN_SECRET` signs the admin out. No admin secret is in the browser bundle; never add one as a `VITE_` variable.
 - **Uploaded images are ephemeral on Railway.** Files saved to `uploads/` live on the Railway container's local filesystem. They are lost on redeploy. Use Cloudinary (via the `VITE_CLOUDINARY_*` vars) for persistent image hosting in production.
 - **Shipping rates expire.** Shippo rate IDs are short-lived. The frontend should call `/api/shipping/rates` and proceed to `/api/checkout` in the same session — do not cache rate IDs.
 - **Sheet backfill duplicates.** `POST /api/admin/sync-sheets` appends — it does not deduplicate. Clear the data rows in the sheet before running a backfill.

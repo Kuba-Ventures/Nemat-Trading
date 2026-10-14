@@ -1,17 +1,9 @@
 import { Router } from "express";
 import { buildListingsRequestBody, pickBuyBoxPrice } from "../lib/tcg-pricing";
 import { createRateLimiter } from "../lib/rate-limit";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
-
-function requireAdmin(req: any, res: any, next: any) {
-  const key = req.headers["x-admin-key"];
-  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
 
 // ─── Helpers ──────────────────────────────────────────────────────────────────
 

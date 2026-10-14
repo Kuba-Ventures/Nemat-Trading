@@ -2,7 +2,43 @@ import { useState, useEffect, useRef, useCallback } from "react";
 import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
-const ADMIN_PASSWORD = import.meta.env.VITE_ADMIN_PASSWORD ?? "";
+
+// ─── Admin session ────────────────────────────────────────────────────────────
+// The password is checked by the API (POST /api/admin/login), which returns a
+// short-lived signed token. Nothing secret ships in this bundle. The token lives
+// in sessionStorage, so it ends with the tab.
+
+const TOKEN_KEY = "ttd-admin-token";
+
+function readToken(): string {
+  try {
+    const raw = sessionStorage.getItem(TOKEN_KEY);
+    if (!raw) return "";
+    const { token, expiresAt } = JSON.parse(raw) as { token: string; expiresAt: number };
+    return expiresAt > Date.now() ? token : "";
+  } catch {
+    return "";
+  }
+}
+
+function saveToken(token: string, expiresAt: number) {
+  try { sessionStorage.setItem(TOKEN_KEY, JSON.stringify({ token, expiresAt })); } catch { /* private mode */ }
+}
+
+function clearToken() {
+  try { sessionStorage.removeItem(TOKEN_KEY); } catch { /* private mode */ }
+}
+
+const UNAUTHORIZED_EVENT = "ttd-admin-unauthorized";
+
+// fetch for our API: always sends the admin token, and a 401 signs the page out.
+async function adminFetch(url: string, init: RequestInit = {}): Promise<Response> {
+  const headers = new Headers(init.headers);
+  headers.set("x-admin-key", readToken());
+  const res = await fetch(url, { ...init, headers });
+  if (res.status === 401) window.dispatchEvent(new Event(UNAUTHORIZED_EVENT));
+  return res;
+}
 
 type PullProb = { label: string; abbr: string; percent: number; color: string; display?: string; perCardPct?: number | null };
 type PossiblePull = { id: number; title: string; subtitle: string; probability: string; scryfallImage: string; featured: boolean };
@@ -106,7 +142,7 @@ function ProductList({ adminKey, onEdit, onNew }: {
     setRelocking(true);
     setRelockResult(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/relock-pulls`, {
+      const res = await adminFetch(`${API_URL}/api/admin/products/relock-pulls`, {
         method: "POST",
         headers: { "x-admin-key": adminKey },
       });
@@ -127,7 +163,7 @@ function ProductList({ adminKey, onEdit, onNew }: {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/products`, { headers: { "x-admin-key": adminKey } });
+      const res = await adminFetch(`${API_URL}/api/admin/products`, { headers: { "x-admin-key": adminKey } });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       const data = await res.json();
       const sorted = [...data].sort((a: Product, b: Product) => {
@@ -290,7 +326,7 @@ function ImageField({ value, onChange }: {
     setUploadError(null);
     try {
       // 1. Get transparent PNG from the backend
-      const res = await fetch(`${API_URL}/api/remove-background`, {
+      const res = await adminFetch(`${API_URL}/api/remove-background`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({ imageUrl: value }),
@@ -569,7 +605,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     setLookupResult(null);
     discountManuallyEdited.current = false;
     try {
-      const res = await fetch(`${API_URL}/api/lookup/tcgplayer`, {
+      const res = await adminFetch(`${API_URL}/api/lookup/tcgplayer`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ url }),
@@ -614,7 +650,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
         .filter((p) => /mythic|rare/i.test(p.subtitle))
         .map((p) => p.title)
         .slice(0, 6);
-      const res = await fetch(`${API_URL}/api/intel-report/restyle`, {
+      const res = await adminFetch(`${API_URL}/api/intel-report/restyle`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ intelReport, productTitle: form.title, chaseCards }),
@@ -640,7 +676,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     setSyncPullsError(null);
     setSyncPullsNote(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/products/sync-pulls`, {
+      const res = await adminFetch(`${API_URL}/api/admin/products/sync-pulls`, {
         method: "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify({ tcgplayerUrl: url, contents }),
@@ -683,7 +719,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
     };
     try {
       const url = isEdit ? `${API_URL}/api/admin/products/${product.id}` : `${API_URL}/api/admin/products`;
-      const res = await fetch(url, {
+      const res = await adminFetch(url, {
         method: isEdit ? "PATCH" : "POST",
         headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
         body: JSON.stringify(body),
@@ -700,7 +736,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
   async function handleDelete() {
     if (!product || !confirm(`Delete "${product.title}"?`)) return;
     setDeleting(true);
-    await fetch(`${API_URL}/api/admin/products/${product.id}`, {
+    await adminFetch(`${API_URL}/api/admin/products/${product.id}`, {
       method: "DELETE",
       headers: { "x-admin-key": adminKey },
     });
@@ -709,7 +745,7 @@ function ProductForm({ adminKey, product, onBack, onSaved }: {
 
   async function toggleActive() {
     if (!product) return;
-    await fetch(`${API_URL}/api/admin/products/${product.id}`, {
+    await adminFetch(`${API_URL}/api/admin/products/${product.id}`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "x-admin-key": adminKey },
       body: JSON.stringify({ active: !product.active }),
@@ -1099,7 +1135,7 @@ function SubscriberList({ adminKey }: { adminKey: string }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/subscribers`, { headers: { "x-admin-key": adminKey } });
+      const res = await adminFetch(`${API_URL}/api/admin/subscribers`, { headers: { "x-admin-key": adminKey } });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       setSubscribers(await res.json());
     } catch (err: any) {
@@ -1196,7 +1232,7 @@ function OrderList({ adminKey }: { adminKey: string }) {
     setLoading(true);
     setLoadError(null);
     try {
-      const res = await fetch(`${API_URL}/api/admin/orders`, { headers: { "x-admin-key": adminKey } });
+      const res = await adminFetch(`${API_URL}/api/admin/orders`, { headers: { "x-admin-key": adminKey } });
       if (!res.ok) throw new Error(`API returned ${res.status}`);
       setOrders(await res.json());
     } catch (err: any) {
@@ -1210,7 +1246,7 @@ function OrderList({ adminKey }: { adminKey: string }) {
     setSyncing(true);
     setSyncMsg("");
     try {
-      const res = await fetch(`${API_URL}/api/admin/backfill-orders`, {
+      const res = await adminFetch(`${API_URL}/api/admin/backfill-orders`, {
         method: "POST",
         headers: { "x-admin-key": adminKey },
       });
@@ -1233,7 +1269,7 @@ function OrderList({ adminKey }: { adminKey: string }) {
     setSyncingSheet(true);
     setSheetMsg("");
     try {
-      const res = await fetch(`${API_URL}/api/admin/sync-sheets`, {
+      const res = await adminFetch(`${API_URL}/api/admin/sync-sheets`, {
         method: "POST",
         headers: { "x-admin-key": adminKey },
       });
@@ -1351,21 +1387,46 @@ function OrderList({ adminKey }: { adminKey: string }) {
 // ─── Root Admin ───────────────────────────────────────────────────────────────
 
 export default function AdminPage() {
-  const [authed, setAuthed] = useState(false);
+  const [adminKey, setAdminKey] = useState(readToken);
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
+  const [loggingIn, setLoggingIn] = useState(false);
   const [view, setView] = useState<View>("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const adminKey = ADMIN_PASSWORD;
+  // Any 401 from an admin call (expired or rotated token) returns to the login.
+  useEffect(() => {
+    const signOut = () => { clearToken(); setAdminKey(""); setLoginError("Session expired. Log in again."); };
+    window.addEventListener(UNAUTHORIZED_EVENT, signOut);
+    return () => window.removeEventListener(UNAUTHORIZED_EVENT, signOut);
+  }, []);
 
-  function handleLogin(e: React.FormEvent) {
+  async function handleLogin(e: React.FormEvent) {
     e.preventDefault();
-    if (password === ADMIN_PASSWORD) { setAuthed(true); }
-    else { setLoginError("Incorrect password"); }
+    setLoggingIn(true);
+    setLoginError(null);
+    try {
+      const res = await fetch(`${API_URL}/api/admin/login`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ password }),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || !data.token) {
+        setLoginError(res.status === 429 ? "Too many tries. Wait a few minutes." : "Incorrect password");
+        return;
+      }
+      saveToken(data.token, data.expiresAt);
+      setPassword("");
+      setAdminKey(data.token);
+    } catch {
+      setLoginError("Couldn't reach the server");
+    } finally {
+      setLoggingIn(false);
+    }
   }
 
-  if (!authed) {
+  if (!adminKey) {
     return (
       <main className="min-h-screen bg-black text-white flex items-center justify-center px-6">
         <div className="w-full max-w-sm">
@@ -1376,9 +1437,9 @@ export default function AdminPage() {
               onChange={(e) => setPassword(e.target.value)}
               className="rounded border border-white/10 bg-white/[0.03] px-4 py-3 text-sm focus:outline-none focus:border-cyan-400/40" />
             {loginError && <p className="text-sm text-red-400">{loginError}</p>}
-            <button type="submit"
-              className="rounded bg-cyan-400 px-5 py-3 text-xs font-bold uppercase tracking-[0.25em] text-black hover:bg-cyan-300 transition-colors">
-              Enter
+            <button type="submit" disabled={loggingIn || !password}
+              className="rounded bg-cyan-400 px-5 py-3 text-xs font-bold uppercase tracking-[0.25em] text-black hover:bg-cyan-300 transition-colors disabled:opacity-50">
+              {loggingIn ? "Checking..." : "Enter"}
             </button>
           </form>
         </div>

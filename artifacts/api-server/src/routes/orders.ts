@@ -3,18 +3,9 @@ import Stripe from "stripe";
 import { db, ordersTable, productsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 import { orderRowFromSession } from "../lib/orderFromSession";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
-
-// Admin middleware (same shared-secret pattern as products/subscribers routes).
-function requireAdmin(req: any, res: any, next: any) {
-  const key = req.headers["x-admin-key"];
-  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
 
 // Admin: list all completed orders, newest first, with product titles resolved.
 router.get("/admin/orders", requireAdmin, async (_req, res) => {

@@ -2,6 +2,7 @@ import { Router } from "express";
 import { db, subscribersTable, ordersTable, productsTable } from "@workspace/db";
 import { appendToSheet } from "../lib/sheets";
 import { locationFromIp } from "../lib/geo";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
 
@@ -40,16 +41,6 @@ router.post("/subscribe", async (req, res) => {
     res.status(500).json({ error: "Failed to subscribe" });
   }
 });
-
-// Admin middleware (reused from products)
-function requireAdmin(req: any, res: any, next: any) {
-  const key = req.headers["x-admin-key"];
-  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
 
 // Admin: list all subscribers
 router.get("/admin/subscribers", requireAdmin, async (_req, res) => {
