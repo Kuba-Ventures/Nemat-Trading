@@ -2,6 +2,7 @@ import { Router } from "express";
 import Stripe from "stripe";
 import { db, ordersTable } from "@workspace/db";
 import { requireAdmin } from "../lib/adminAuth";
+import { createSyncCache } from "../lib/syncCache";
 import {
   classifySource,
   dayKey,
@@ -21,20 +22,12 @@ import { loadGa4Funnel, type Ga4Summary } from "../lib/ga4";
 // GET /api/admin/metrics?range=7d|14d|30d|all
 // One payload for the admin Finance and Growth pages. Each source fails on its
 // own: a Stripe, Meta or GA4 outage shows as an error on its cards, never a blank page.
-// Results are cached in memory for 5 minutes per range.
+// Each source is cached in memory for 1 minute per range, and the response says
+// when each one was fetched. ?fresh=1 ("Sync now") skips the cache.
 
 const router = Router();
 
-const CACHE_MS = 5 * 60 * 1000;
-const cache = new Map<string, { at: number; value: unknown }>();
-
-async function cached<T>(key: string, load: () => Promise<T>): Promise<T> {
-  const hit = cache.get(key);
-  if (hit && Date.now() - hit.at < CACHE_MS) return hit.value as T;
-  const value = await load();
-  cache.set(key, { at: Date.now(), value });
-  return value;
-}
+const cached = createSyncCache(60 * 1000, 10 * 1000);
 
 type Block<T> = ({ ok: true } & T) | { ok: false; error: string };
 
@@ -142,11 +135,20 @@ async function loadMeta(range: Range, days: string[]): Promise<MetaSummary> {
 
 router.get("/admin/metrics", requireAdmin, async (req, res) => {
   const range = parseRange(req.query.range);
+  const fresh = req.query.fresh === "1";
   const stripeKey = process.env.STRIPE_SECRET_KEY;
+
+  // When each source was last fetched (null: not configured or it failed).
+  const synced: { stripe: string | null; meta: string | null; ga4: string | null } = { stripe: null, meta: null, ga4: null };
+  const track = async <T>(source: keyof typeof synced, key: string, load: () => Promise<T>): Promise<T> => {
+    const hit = await cached(key, load, fresh);
+    synced[source] = new Date(hit.at).toISOString();
+    return hit.value;
+  };
 
   const orders = await block(async () => {
     if (!stripeKey) throw new Error("Stripe not configured");
-    return { list: await cached(`stripe:${range.key}`, () => loadStripeOrders(new Stripe(stripeKey), range)) };
+    return { list: await track("stripe", `stripe:${range.key}`, () => loadStripeOrders(new Stripe(stripeKey), range)) };
   }, "stripe");
 
   // "All" starts at the first order (or 30 days back when there are none yet).
@@ -160,17 +162,18 @@ router.get("/admin/metrics", requireAdmin, async (req, res) => {
     : orders;
 
   const meta: Block<MetaSummary> | null = process.env.META_ACCESS_TOKEN
-    ? await block(() => cached(`meta:${range.key}`, () => loadMeta(range, days)), "meta")
+    ? await block(() => track("meta", `meta:${range.key}`, () => loadMeta(range, days)), "meta")
     : null;
 
   const ga4: Block<Ga4Summary> | null = process.env.GA4_SERVICE_ACCOUNT_JSON
-    ? await block(() => cached(`ga4:${range.key}:${days[0]}`, () => loadGa4Funnel(days)), "ga4")
+    ? await block(() => track("ga4", `ga4:${range.key}:${days[0]}`, () => loadGa4Funnel(days)), "ga4")
     : null;
 
   res.set("Cache-Control", "no-store").json({
     range: { key: range.key, start: range.start?.toISOString() ?? null, end: range.end.toISOString() },
     days,
     generatedAt: new Date().toISOString(),
+    synced,
     finance,
     meta,
     ga4,

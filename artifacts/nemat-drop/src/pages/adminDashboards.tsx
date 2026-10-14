@@ -1,5 +1,6 @@
-import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useLayoutEffect, useRef, useState } from "react";
 import { BrandIcon, type BrandKey } from "@/components/BrandIcon";
+import { SYNC_POLL_MS, syncStatus, type SyncSource } from "@/lib/syncStatus";
 
 // Finance and Growth dashboards for /admin, fed by GET /api/admin/metrics.
 // Layout is the "one-page scorecard" (Option A) chosen on 2026-10-13, split
@@ -54,12 +55,14 @@ export type Metrics = {
   range: { key: string; start: string | null; end: string };
   days: string[];
   generatedAt: string;
+  // When each source was last fetched (null: not configured or it failed).
+  synced?: Partial<Record<SyncSource, string | null>>;
   finance: Block<Finance>;
   meta: Block<Meta> | null;
   ga4: Block<Ga4> | null;
 };
 
-export type MetricsLoader = (range: string) => Promise<Metrics>;
+export type MetricsLoader = (range: string, opts?: { fresh?: boolean }) => Promise<Metrics>;
 
 // ─── Config ───────────────────────────────────────────────────────────────────
 
@@ -112,20 +115,44 @@ const STATUS_DOT: Record<Meta["campaigns"][number]["state"], string> = {
 function useMetrics(load: MetricsLoader, range: string) {
   const [data, setData] = useState<Metrics | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(true); // first load or a range change
+  const [syncing, setSyncing] = useState(false); // background or forced sync
+  const [, tick] = useState(0);
+  const seq = useRef(0);
+
+  const fetchMetrics = useCallback(
+    (mode: "range" | "poll" | "force") => {
+      const id = ++seq.current;
+      if (mode === "range") setLoading(true);
+      else setSyncing(true);
+      return load(range, mode === "force" ? { fresh: true } : undefined)
+        .then((m) => { if (id === seq.current) { setData(m); setError(null); } })
+        .catch((err) => { if (id === seq.current) setError(err?.message ?? "Couldn't load metrics"); })
+        .finally(() => { if (id === seq.current) { setLoading(false); setSyncing(false); } });
+    },
+    [load, range],
+  );
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    load(range)
-      .then((m) => { if (!cancelled) setData(m); })
-      .catch((err) => { if (!cancelled) setError(err?.message ?? "Couldn't load metrics"); })
-      .finally(() => { if (!cancelled) setLoading(false); });
-    return () => { cancelled = true; };
-  }, [load, range]);
+    fetchMetrics("range");
+    // Live view: sync every minute while the tab is visible, and as soon as it
+    // comes back into view. The 15s tick re-evaluates the stale state.
+    const poll = window.setInterval(() => {
+      if (document.visibilityState === "visible") fetchMetrics("poll");
+    }, SYNC_POLL_MS);
+    const ticker = window.setInterval(() => tick((n) => n + 1), 15_000);
+    const onVisible = () => { if (document.visibilityState === "visible") fetchMetrics("poll"); };
+    document.addEventListener("visibilitychange", onVisible);
+    return () => {
+      seq.current++;
+      window.clearInterval(poll);
+      window.clearInterval(ticker);
+      document.removeEventListener("visibilitychange", onVisible);
+    };
+  }, [fetchMetrics]);
 
-  return { data, error, loading };
+  const syncNow = useCallback(() => { fetchMetrics("force"); }, [fetchMetrics]);
+  return { data, error, loading, syncing, syncNow };
 }
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
@@ -153,35 +180,77 @@ function CardError({ message }: { message: string }) {
   return <p className="text-sm text-red-400">Couldn't load: {message}</p>;
 }
 
-function Header({ title, range, onRange, generatedAt }: {
+const SYNC_DOT = { live: "bg-emerald-400", stale: "bg-amber-400", error: "bg-red-400" } as const;
+
+function SyncPill({ data, requestFailed, syncing, onSync }: {
+  data: Metrics | null;
+  requestFailed: boolean;
+  syncing: boolean;
+  onSync: () => void;
+}) {
+  if (!data) return null;
+  const failed = (["stripe", "meta", "ga4"] as const).filter((s) => {
+    const b = s === "stripe" ? data.finance : data[s];
+    return b != null && !b.ok;
+  });
+  const status = syncStatus({ synced: data.synced ?? { stripe: data.generatedAt }, failed: [...failed], requestFailed }, Date.now());
+  const dot = SYNC_DOT[status.state];
+  return (
+    <>
+      <span
+        className="inline-flex items-center gap-2 rounded-full border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs text-gray-300"
+        title={status.detail}
+        role="status"
+      >
+        <span className="relative flex h-2 w-2">
+          {status.state === "live" && <span className={`absolute inline-flex h-full w-full animate-ping rounded-full opacity-75 ${dot}`} />}
+          <span className={`relative inline-flex h-2 w-2 rounded-full ${dot}`} />
+        </span>
+        {syncing ? "Syncing..." : status.label}
+      </span>
+      <button
+        onClick={onSync}
+        disabled={syncing}
+        className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:border-cyan-400/50 disabled:opacity-60"
+      >
+        <svg className={`h-3.5 w-3.5 ${syncing ? "animate-spin" : ""}`} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" aria-hidden="true">
+          <path d="M21 12a9 9 0 1 1-3-6.7L21 8" />
+          <path d="M21 3v5h-5" />
+        </svg>
+        Sync
+      </button>
+    </>
+  );
+}
+
+function Header({ title, range, onRange, sync }: {
   title: string;
   range: string;
   onRange: (r: string) => void;
-  generatedAt?: string;
+  sync: React.ReactNode;
 }) {
   return (
     <div className="mb-4 flex flex-wrap items-center justify-between gap-3">
       <div>
         <h1 className="text-2xl font-bold text-white">{title}</h1>
-        {generatedAt && (
-          <p className="text-xs text-gray-500">
-            Updated {new Date(generatedAt).toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" })}. Refreshes every 5 min. Test orders excluded.
-          </p>
-        )}
+        <p className="text-xs text-gray-500">Test orders excluded.</p>
       </div>
-      <div className="flex gap-1 rounded-md border border-white/10 bg-white/[0.03] p-1" role="group" aria-label="Date range">
-        {RANGES.map((r) => (
-          <button
-            key={r.key}
-            onClick={() => onRange(r.key)}
-            aria-pressed={range === r.key}
-            className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
-              range === r.key ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"
-            }`}
-          >
-            {r.label}
-          </button>
-        ))}
+      <div className="flex flex-wrap items-center gap-2">
+        {sync}
+        <div className="flex gap-1 rounded-md border border-white/10 bg-white/[0.03] p-1" role="group" aria-label="Date range">
+          {RANGES.map((r) => (
+            <button
+              key={r.key}
+              onClick={() => onRange(r.key)}
+              aria-pressed={range === r.key}
+              className={`rounded px-3 py-1.5 text-xs font-semibold transition-colors ${
+                range === r.key ? "bg-white/10 text-white" : "text-gray-400 hover:text-white"
+              }`}
+            >
+              {r.label}
+            </button>
+          ))}
+        </div>
       </div>
     </div>
   );
@@ -361,10 +430,15 @@ function Shell({ title, load, children }: {
   children: (m: Metrics) => React.ReactNode;
 }) {
   const [range, setRange] = useState("30d");
-  const { data, error, loading } = useMetrics(load, range);
+  const { data, error, loading, syncing, syncNow } = useMetrics(load, range);
   return (
     <div>
-      <Header title={title} range={range} onRange={setRange} generatedAt={data?.generatedAt} />
+      <Header
+        title={title}
+        range={range}
+        onRange={setRange}
+        sync={<SyncPill data={data} requestFailed={!!error && !!data} syncing={syncing} onSync={syncNow} />}
+      />
       {error && !data && <p className="text-sm text-red-400">Couldn't load metrics: {error}</p>}
       {loading && !data && <p className="text-sm text-gray-500">Loading...</p>}
       {data && <div className={loading ? "opacity-60 transition-opacity" : ""}>{children(data)}</div>}
