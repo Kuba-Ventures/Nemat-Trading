@@ -1,5 +1,6 @@
 import app from "./app";
 import { pool } from "@workspace/db";
+import { startWeeklySnapshotScheduler } from "./lib/weeklySnapshotJob";
 
 const rawPort = process.env["PORT"];
 
@@ -84,12 +85,21 @@ async function migrate() {
       subscribed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    -- One row per weekly snapshot email (week = the Friday it went out, business
+    -- time). The row is claimed before sending so a week is never sent twice.
+    CREATE TABLE IF NOT EXISTS weekly_snapshots (
+      week TEXT PRIMARY KEY,
+      recipients TEXT,
+      sent_at TIMESTAMP NOT NULL DEFAULT NOW()
+    );
+
     -- Lock these tables down from Supabase's public Data API (anon key).
     -- We connect as the postgres role, which bypasses RLS, so the app is
     -- unaffected. With RLS on and no policies, the Data API returns nothing.
     ALTER TABLE products    ENABLE ROW LEVEL SECURITY;
     ALTER TABLE orders      ENABLE ROW LEVEL SECURITY;
     ALTER TABLE subscribers ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE weekly_snapshots ENABLE ROW LEVEL SECURITY;
   `);
 
   // Seed the default product if the table is empty
@@ -118,6 +128,7 @@ migrate()
   .then(() => {
     app.listen(port, () => {
       console.log(`Server listening on port ${port}`);
+      startWeeklySnapshotScheduler();
     });
   })
   .catch((err) => {

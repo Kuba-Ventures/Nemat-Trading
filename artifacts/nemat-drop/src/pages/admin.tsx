@@ -1,6 +1,6 @@
-import { useState, useEffect, useRef, useCallback } from "react";
+import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
-import { FinanceDashboard, GrowthDashboard, type Metrics } from "./adminDashboards";
+import { FinanceDashboard, GrowthDashboard, type Metrics, type WeeklyEmailApi } from "./adminDashboards";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -1451,6 +1451,24 @@ export default function AdminPage() {
     return res.json();
   }, []);
 
+  const weeklyEmail = useMemo<WeeklyEmailApi>(() => ({
+    preview: async () => {
+      const res = await adminFetch(`${API_URL}/api/admin/weekly-snapshot`);
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `API returned ${res.status}`);
+      return body;
+    },
+    sendTest: async (to: string) => {
+      const res = await adminFetch(`${API_URL}/api/admin/weekly-snapshot/test`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to }),
+      });
+      const body = await res.json().catch(() => ({}));
+      if (!res.ok) throw new Error(body.error ?? `API returned ${res.status}`);
+    },
+  }), []);
+
   // Any 401 from an admin call (expired or rotated token) returns to the login.
   useEffect(() => {
     const signOut = () => { clearToken(); setAdminKey(""); setLoginError("Session expired. Log in again."); };
@@ -1527,7 +1545,7 @@ export default function AdminPage() {
         {view === "waitlist" && <SubscriberList adminKey={adminKey} />}
         {view === "orders" && <OrderList adminKey={adminKey} />}
         {view === "finance" && <FinanceDashboard load={loadMetrics} />}
-        {view === "growth" && <GrowthDashboard load={loadMetrics} />}
+        {view === "growth" && <GrowthDashboard load={loadMetrics} weekly={weeklyEmail} />}
       </div>
       </div>
     </main>

@@ -11,6 +11,7 @@ import adminOrdersRouter from "./orders";
 import labelsRouter from "./labels";
 import adminLoginRouter from "./adminLogin";
 import metricsRouter from "./metrics";
+import weeklySnapshotRouter from "./weeklySnapshot";
 
 const router: IRouter = Router();
 
@@ -26,5 +27,6 @@ router.use(adminOrdersRouter);
 router.use(labelsRouter);
 router.use(adminLoginRouter);
 router.use(metricsRouter);
+router.use(weeklySnapshotRouter);
 
 export default router;
