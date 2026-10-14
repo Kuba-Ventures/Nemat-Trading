@@ -23,7 +23,7 @@ type Finance = {
   repeatBuyers: number;
   daily: { date: string; revenueCents: number }[];
   sources: { source: Source; orders: number; revenueCents: number }[];
-  recent: { ref: string; date: string; totalCents: number; discountCents: number; labelBought: boolean; source: Source }[];
+  recent: { ref: string; date: string; totalCents: number; discountCents: number; label: "bought" | "shipped" | "none"; source: Source }[];
 };
 
 type Meta = {
@@ -102,6 +102,9 @@ const shortDay = (d: string) =>
   new Date(`${d}T12:00:00`).toLocaleDateString("en-US", { month: "short", day: "numeric" });
 
 const ratio = (num: number, den: number | null | undefined) => (den ? num / den : null);
+
+// "Shipped": went out without a Shippo label (e.g. from the client's house).
+const LABEL_TEXT: Record<string, string> = { bought: "Bought", shipped: "Shipped", none: "Not yet" };
 
 const STATUS_DOT: Record<Meta["campaigns"][number]["state"], string> = {
   active: "bg-emerald-500",
@@ -415,7 +418,7 @@ function RecentOrders({ rows }: { rows: Finance["recent"] }) {
               <td className="py-2 text-gray-300">{new Date(r.date).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</td>
               <td className="py-2 text-right tabular-nums text-white">{money(r.totalCents)}</td>
               <td className="py-2 text-right tabular-nums text-gray-300">{r.discountCents ? `-${money(r.discountCents)}` : "-"}</td>
-              <td className="py-2 pl-3 text-gray-300">{r.labelBought ? "Bought" : "Not yet"}</td>
+              <td className="py-2 pl-3 text-gray-300">{LABEL_TEXT[r.label] ?? "Not yet"}</td>
             </tr>
           ))}
         </tbody>

@@ -8,6 +8,7 @@ import {
   dayKey,
   daysBetween,
   feesByCharge,
+  labelState,
   parseMetaInsights,
   parseRange,
   summarizeOrders,
@@ -93,7 +94,7 @@ async function loadOrderExtras(): Promise<Map<string, OrderExtras>> {
       r.sessionId,
       {
         labelCostCents: r.labelCostCents,
-        labelBought: !!r.shippoTransactionId && r.shippoTransactionId !== "pending",
+        label: labelState(r.shippoTransactionId),
         source: classifySource(r),
       },
     ]),

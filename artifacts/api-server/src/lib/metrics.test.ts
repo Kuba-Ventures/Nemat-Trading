@@ -8,6 +8,7 @@ import {
   daysBetween,
   feesByCharge,
   isInternalEmail,
+  labelState,
   parseMetaInsights,
   parseRange,
   purchasesFrom,
@@ -80,8 +81,8 @@ test("summarizeOrders drops internal and fully refunded orders and totals the re
     order("eeeeeeee", { email: "finley@qsbsrollover.com" }), // internal: dropped
   ];
   const extras = new Map<string, OrderExtras>([
-    ["cs_live_aaaaaaaa", { labelCostCents: 527, labelBought: true, source: "Meta" }],
-    ["cs_live_bbbbbbbb", { labelCostCents: null, labelBought: false, source: "Thank-you card" }],
+    ["cs_live_aaaaaaaa", { labelCostCents: 527, label: "bought", source: "Meta" }],
+    ["cs_live_bbbbbbbb", { labelCostCents: null, label: "none", source: "Thank-you card" }],
   ]);
   const days = daysBetween(parseRange("7d", NOW).start!, NOW);
   const s = summarizeOrders(orders, extras, days);
@@ -98,7 +99,7 @@ test("summarizeOrders drops internal and fully refunded orders and totals the re
   assert.equal(s.daily.find((d) => d.date === "2026-10-10")!.revenueCents, 4000 + 3000);
   assert.equal(s.daily.find((d) => d.date === "2026-10-12")!.revenueCents, 3600);
   assert.equal(s.recent[0].ref, "BBBBBBBB");
-  assert.equal(s.recent.find((r) => r.ref === "AAAAAAAA")!.labelBought, true);
+  assert.equal(s.recent.find((r) => r.ref === "AAAAAAAA")!.label, "bought");
   assert.deepEqual(s.sources.map((x) => x.source), ["Meta", "Thank-you card", "Direct"]);
 });
 
@@ -205,4 +206,11 @@ test("feesByCharge counts card and Cash App Pay fees, ignores refunds and payout
     ["py_cashapp", 155],
     ["ch_expanded", 99],
   ]);
+});
+
+test("labelState: bought, shipped without a label, or not yet", () => {
+  assert.equal(labelState(null), "none");
+  assert.equal(labelState("pending"), "none");
+  assert.equal(labelState("shipped-elsewhere"), "shipped");
+  assert.equal(labelState("8f1e2d3c4b5a"), "bought");
 });
