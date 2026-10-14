@@ -145,7 +145,7 @@ test("buildSnapshotEmail: subject, scorecard values and campaign block", () => {
     assert.ok(e.html.includes(s), `html missing ${s}`);
   }
   assert.ok(e.text.includes("Cost per sale (target $40): $133.88"));
-  assert.ok(!e.html.includes("—") && !e.text.includes("—"), "no em dashes");
+  assert.ok(!e.html.includes("\u2014") && !e.text.includes("\u2014"), "no em dashes");
 });
 
 test("buildSnapshotEmail: shows failed sources and escapes names", () => {
