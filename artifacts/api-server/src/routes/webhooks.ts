@@ -13,6 +13,8 @@ import {
 import { buildShippingPdf } from "../lib/packingSlip";
 import { labelOrderFromSession, slipFor } from "../lib/fulfilment";
 import { labelPageUrl } from "../lib/labelLink";
+import { attributionColumnsFromMetadata } from "../lib/attribution";
+import { sendPurchaseEvent, type PurchaseEventInput } from "../lib/metaCapi";
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers["stripe-signature"];
@@ -126,6 +128,13 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
     // "Buy label" link (routes/labels.ts). Never throws, skipped on retries.
     const emailsSent = isNewOrder ? fulfilOrder(full, emailInput) : Promise.resolve();
 
+    // Server-side Meta Purchase, so a sale counts even when the pixel never
+    // loads on /success. Live, paid orders only; never throws.
+    const metaSent =
+      isNewOrder && full.payment_status === "paid" && (full.livemode || process.env.META_TEST_EVENT_CODE)
+        ? sendPurchaseEvent(purchaseEventFor(full, event.created, totalCents, currency, orderCount))
+        : Promise.resolve();
+
     // Append to Google Sheet (non-blocking failure).
     // Orders columns:
     // Timestamp | Order ID | Email | Order Count | Phone | Name | Item | Subtotal |
@@ -154,7 +163,7 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       addr?.country ?? "",
       paymentIntentId,
     ], { dedupeCol: 2 });
-    await emailsSent;
+    await Promise.all([emailsSent, metaSent]);
 
     console.log(`[webhook] order recorded: ${full.id} (${customerEmail})`);
   } catch (err) {
@@ -164,6 +173,39 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
   }
 
   res.json({ received: true });
+}
+
+function purchaseEventFor(
+  full: Stripe.Checkout.Session,
+  eventTimeSec: number,
+  totalCents: number,
+  currency: string,
+  numItems: number,
+): PurchaseEventInput {
+  const md = full.metadata ?? {};
+  const attr = attributionColumnsFromMetadata(md);
+  const frontendUrl = (process.env.FRONTEND_URL ?? "").split(",")[0].trim();
+  const addr = full.shipping_details?.address ?? full.customer_details?.address;
+  return {
+    eventId: full.id,
+    eventTimeSec,
+    eventSourceUrl: frontendUrl ? `${frontendUrl}/success` : undefined,
+    valueCents: totalCents,
+    currency,
+    numItems,
+    contentIds: md.productId ? [md.productId] : undefined,
+    email: full.customer_details?.email ?? undefined,
+    phone: full.customer_details?.phone ?? undefined,
+    name: full.customer_details?.name ?? undefined,
+    city: addr?.city ?? undefined,
+    state: addr?.state ?? undefined,
+    zip: addr?.postal_code ?? undefined,
+    country: addr?.country ?? undefined,
+    clientIp: md.capi_ip || undefined,
+    clientUserAgent: md.capi_ua || undefined,
+    fbp: attr.fbp ?? undefined,
+    fbc: attr.fbc ?? undefined,
+  };
 }
 
 async function fulfilOrder(full: Stripe.Checkout.Session, emailInput: OrderEmailInput): Promise<void> {

@@ -174,6 +174,10 @@ router.post("/checkout", async (req, res) => {
       shippoService: rate.servicelevel.token,
       // Ad click id + UTM tags, so the order can be matched to a Meta ad.
       ...attributionToMetadata(sanitizeAttribution(attribution)),
+      // Buyer's IP and browser, for the server-side Meta Purchase's match
+      // quality (lib/metaCapi.ts). Stripe caps metadata values at 500 chars.
+      ...(req.ip ? { capi_ip: req.ip } : {}),
+      ...(req.get("user-agent") ? { capi_ua: req.get("user-agent")!.slice(0, 500) } : {}),
     },
     success_url: `${frontendUrl}/success?session_id={CHECKOUT_SESSION_ID}`,
     cancel_url: `${frontendUrl}/checkout?qty=${quantity}`,
