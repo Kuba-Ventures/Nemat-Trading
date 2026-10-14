@@ -72,6 +72,11 @@ async function migrate() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_content TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS utm_term TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS landed_at TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shippo_transaction_id TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_number TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS label_url TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS label_cost_cents INTEGER;
 
     CREATE TABLE IF NOT EXISTS subscribers (
       id SERIAL PRIMARY KEY,

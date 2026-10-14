@@ -30,6 +30,18 @@ export type OrderEmailInput = {
   paymentIntentId: string;
 };
 
+// The Shippo label bought for this order (issue #113), or why it wasn't.
+export type ShipmentInfo =
+  | {
+      ok: true;
+      service: string;
+      costCents: number;
+      trackingNumber: string;
+      trackingUrl: string;
+      fallback: boolean;
+    }
+  | { ok: false; reason: string };
+
 export type OrderEmail = {
   subject: string;
   text: string;
@@ -63,7 +75,24 @@ function isDiscounted(o: OrderEmailInput): boolean {
   return !!o.discount && Number(o.discount) > 0;
 }
 
-export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
+function shipmentLines(s: ShipmentInfo): string[] {
+  if (!s.ok) {
+    return [
+      "LABEL NOT BOUGHT. Buy it by hand in Shippo or Pirate Ship.",
+      `Reason: ${s.reason}`,
+    ];
+  }
+  return [
+    `${s.service}, $${(s.costCents / 100).toFixed(2)} postage. Label and packing slip are attached.`,
+    ...(s.fallback
+      ? ["The service the customer paid for wasn't offered, so this is the cheapest USPS rate. Check it."]
+      : []),
+    `Tracking: ${s.trackingNumber || "(none returned)"}`,
+    "Cancelled order? Void the label in Shippo within 30 days for a refund.",
+  ];
+}
+
+export function buildOrderEmail(o: OrderEmailInput, shipment?: ShipmentInfo): OrderEmail {
   // "City, ST 12345", tolerant of any part missing.
   const locality = [o.city, o.state].filter(Boolean).join(", ");
   const cityLine = [locality, o.zip].filter(Boolean).join(" ");
@@ -83,6 +112,7 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
   const subject = `New order: ${item}${qty !== "1" ? ` ×${qty}` : ""} · ${total}`;
 
   const text = [
+    ...(shipment ? ["LABEL", ...shipmentLines(shipment).map((l) => `  ${l}`), ""] : []),
     "PACKING LIST",
     `  ${item}  ×${qty}`,
     "",
@@ -106,6 +136,16 @@ export function buildOrderEmail(o: OrderEmailInput): OrderEmail {
   const html = [
     // Explicit white background so dark-mode clients don't invert the layout.
     `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;background:#ffffff;color:#111;padding:8px 4px">`,
+    shipment
+      ? section(
+          "Label",
+          shipmentLines(shipment)
+            .map((l, i) =>
+              i === 0 && !shipment.ok ? `<strong style="color:#b91c1c">${esc(l)}</strong>` : esc(l),
+            )
+            .join("<br>"),
+        )
+      : "",
     section("Packing list", `<strong>${esc(item)}</strong> &times;${esc(qty)}`),
     section("Ship to", shipTo.map(esc).join("<br>")),
     section(
@@ -140,6 +180,7 @@ type ResendEmail = {
   text: string;
   html: string;
   reply_to?: string;
+  attachments?: Array<{ filename: string; content: string }>;
 };
 
 // Never throws: a mail failure must not fail the webhook, or Stripe retries it.
@@ -171,8 +212,12 @@ async function sendViaResend(email: ResendEmail, idempotencyKey: string, tag: st
   }
 }
 
-export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
-  const email = buildOrderEmail(o);
+export async function sendOrderEmail(
+  o: OrderEmailInput,
+  shipment?: ShipmentInfo,
+  pdf?: Uint8Array | null,
+): Promise<void> {
+  const email = buildOrderEmail(o, shipment);
   await sendViaResend(
     {
       from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
@@ -181,6 +226,16 @@ export async function sendOrderEmail(o: OrderEmailInput): Promise<void> {
       text: email.text,
       html: email.html,
       ...(email.replyTo ? { reply_to: email.replyTo } : {}),
+      ...(pdf
+        ? {
+            attachments: [
+              {
+                filename: `label-${o.sessionId.slice(-8)}.pdf`,
+                content: Buffer.from(pdf).toString("base64"),
+              },
+            ],
+          }
+        : {}),
     },
     `order-${o.sessionId}`,
     "order-email",
@@ -329,5 +384,76 @@ export async function sendConfirmationEmail(
     },
     `confirm-${o.sessionId}`,
     "confirm-email",
+  );
+}
+
+// ─── Tracking ────────────────────────────────────────────────────────────────
+// Sent when the label is bought. USPS tracking starts updating at the first scan.
+
+export function buildTrackingEmail(
+  o: OrderEmailInput,
+  t: { service: string; trackingNumber: string; trackingUrl: string },
+): OrderEmail {
+  const orderRef = o.sessionId.slice(-8).toUpperCase();
+  const subject = `Your order is packed: tracking ${t.trackingNumber}`;
+  const text = [
+    "PACKED AND LABELED",
+    `Order #${orderRef} is packed and has a ${t.service} label.`,
+    "",
+    `Tracking: ${t.trackingNumber}`,
+    ...(t.trackingUrl ? [t.trackingUrl] : []),
+    "",
+    "Tracking starts updating once USPS scans it, usually within a day.",
+    "Questions? Just reply to this email.",
+    "",
+    SITE_URL,
+  ].join("\n");
+
+  const html = [
+    `<div style="margin:0;background:#000000">`,
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000000"><tr><td align="center">`,
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="max-width:480px;background:#000000">`,
+    `<tr><td align="center" style="padding:28px 0 0">` +
+      `<img src="${SITE_URL}/favicon.png" width="28" height="28" alt="" style="vertical-align:middle">` +
+      ` <span style="vertical-align:middle;display:inline-block;text-align:left">` +
+      `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>` +
+      `<span style="display:block;font:700 8px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a;margin-top:3px">TRADING CARDS</span>` +
+      `</span></td></tr>`,
+    `<tr><td align="center" style="padding:26px 20px 0;font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a">PACKED AND LABELED</td></tr>`,
+    `<tr><td align="center" style="padding:8px 20px 6px;${HEADLINE_FONT};font-size:32px;line-height:1.05;color:#ffffff">On its way soon.</td></tr>`,
+    `<tr><td align="center" style="padding:0 28px;font:14px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
+      `Order #${esc(orderRef)} &middot; ${esc(t.service)}</td></tr>`,
+    `<tr><td align="center" style="padding:22px 28px 0;font:700 18px/1.4 'Courier New',monospace;letter-spacing:.06em;color:#ffffff">` +
+      `${esc(t.trackingNumber)}</td></tr>`,
+    t.trackingUrl
+      ? `<tr><td align="center" style="padding:18px 0 0"><a href="${esc(t.trackingUrl)}" style="display:inline-block;background:#22d3ee;` +
+        `color:#000000;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.25em;padding:12px 30px;border-radius:4px;` +
+        `text-decoration:none">TRACK PACKAGE</a></td></tr>`
+      : "",
+    `<tr><td align="center" style="padding:22px 28px 36px;font:12px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
+      `Tracking starts updating once USPS scans it, usually within a day. Questions? Just reply to this email.</td></tr>`,
+    `</table></td></tr></table></div>`,
+  ].join("");
+
+  return { subject, text, html };
+}
+
+export async function sendTrackingEmail(
+  o: OrderEmailInput,
+  t: { service: string; trackingNumber: string; trackingUrl: string },
+): Promise<void> {
+  if (!o.customerEmail || !t.trackingNumber) return;
+  const email = buildTrackingEmail(o, t);
+  await sendViaResend(
+    {
+      from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
+      to: [o.customerEmail],
+      subject: email.subject,
+      text: email.text,
+      html: email.html,
+      reply_to: process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT,
+    },
+    `tracking-${o.sessionId}`,
+    "tracking-email",
   );
 }
