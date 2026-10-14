@@ -1,4 +1,5 @@
 import { useEffect, useLayoutEffect, useRef, useState } from "react";
+import { BrandIcon, type BrandKey } from "@/components/BrandIcon";
 
 // Finance and Growth dashboards for /admin, fed by GET /api/admin/metrics.
 // Layout is the "one-page scorecard" (Option A) chosen on 2026-10-13, split
@@ -65,17 +66,19 @@ export type MetricsLoader = (range: string) => Promise<Metrics>;
 // Validated for the dark surface (dataviz check, 2026-10-13): CVD and contrast pass.
 const COLOR = { revenue: "#1497ad", spend: "#b58424" };
 
-export const ACCOUNT_LINKS: { label: string; href: string }[] = [
-  { label: "Stripe", href: "https://dashboard.stripe.com/acct_1TJwECDFbDz5vOgM/dashboard" },
-  { label: "Meta Ads Manager", href: "https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=987622110989837&business_id=2000673880800829" },
+export const ACCOUNT_LINKS: { label: string; href: string; brand: BrandKey }[] = [
+  { label: "Stripe", href: "https://dashboard.stripe.com/acct_1TJwECDFbDz5vOgM/dashboard", brand: "stripe" },
+  { label: "Meta Ads Manager", href: "https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=987622110989837&business_id=2000673880800829", brand: "meta" },
   // GA4 property 541136891 (account 340998971), confirmed 2026-10-13.
-  { label: "GA4", href: "https://analytics.google.com/analytics/web/#/a340998971p541136891/reports/intelligenthome" },
+  { label: "GA4", href: "https://analytics.google.com/analytics/web/#/a340998971p541136891/reports/intelligenthome", brand: "googleanalytics" },
   // GTM-TVHXMXW5.
-  { label: "Tag Manager", href: "https://tagmanager.google.com/#/container/accounts/6353614712/containers/257567057" },
-  { label: "Search Console", href: "https://search.google.com/search-console?resource_id=sc-domain%3Atommytopdecker.com" },
-  { label: "Shippo", href: "https://apps.goshippo.com/shipments" },
-  { label: "Railway", href: "https://railway.com/project/6898fb14-7379-4f0b-9924-2b41fd04b78d" },
-  { label: "Vercel", href: "https://vercel.com/kuba-ventures/tommytopdecker-trading-co" },
+  { label: "Tag Manager", href: "https://tagmanager.google.com/#/container/accounts/6353614712/containers/257567057", brand: "googletagmanager" },
+  { label: "Search Console", href: "https://search.google.com/search-console?resource_id=sc-domain%3Atommytopdecker.com", brand: "googlesearchconsole" },
+  // Tommy Top Decker's Facebook Page (page id 1265007950025605).
+  { label: "Facebook", href: "https://www.facebook.com/61591387427539", brand: "facebook" },
+  { label: "Shippo", href: "https://apps.goshippo.com/shipments", brand: "shippo" },
+  { label: "Railway", href: "https://railway.com/project/6898fb14-7379-4f0b-9924-2b41fd04b78d", brand: "railway" },
+  { label: "Vercel", href: "https://vercel.com/kuba-ventures/tommytopdecker-trading-co", brand: "vercel" },
 ];
 
 const RANGES = [
@@ -193,9 +196,10 @@ function AccountLinks() {
           href={l.href}
           target="_blank"
           rel="noreferrer"
-          className="rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white transition-colors hover:border-cyan-400/50"
+          className="inline-flex items-center gap-2 rounded-md border border-white/10 bg-white/[0.04] px-3 py-2 text-xs text-white transition-colors hover:border-cyan-400/50"
         >
-          {l.label} ↗
+          <BrandIcon brand={l.brand} />
+          {l.label} <span className="text-gray-500">↗</span>
         </a>
       ))}
     </div>
