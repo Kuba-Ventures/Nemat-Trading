@@ -646,7 +646,7 @@ export function GrowthDashboard({ load }: { load: MetricsLoader }) {
                         })}
                       </tbody>
                     </table>
-                    <p className="mt-2 text-xs text-gray-500">Sales here are what Meta tracked; Orders above come from Stripe.</p>
+                    <p className="mt-2 text-xs text-gray-500">Sales here are what Meta tracked, plus orders credited to the campaign by hand.</p>
                   </div>
                 )}
               </Card>

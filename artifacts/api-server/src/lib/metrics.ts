@@ -135,6 +135,9 @@ export function labelState(shippoTransactionId: string | null | undefined): Labe
 export type OrderExtras = {
   labelCostCents: number | null;
   label: LabelState;
+  // Campaign the owner credited this order to by hand (utm_medium "manual"),
+  // for sales Meta never tracked. Null for normal orders.
+  creditedCampaign?: string | null;
   source: Source;
 };
 
@@ -160,6 +163,35 @@ export type FinanceSummary = {
   }[];
 };
 
+/** Orders the dashboards count: no internal test orders, no fully refunded ones. */
+function countedOrders(orders: PaidOrder[]): PaidOrder[] {
+  return orders.filter(
+    (o) => !isInternalEmail(o.email) && !(o.totalCents > 0 && o.refundedCents >= o.totalCents),
+  );
+}
+
+/**
+ * Campaign sales: what Meta tracked plus orders credited to the campaign by
+ * hand (matched by campaign id or name). Returns new objects, so a cached Meta
+ * result is never changed.
+ */
+export function withCreditedSales(
+  campaigns: MetaCampaign[],
+  orders: PaidOrder[],
+  extras: Map<string, OrderExtras>,
+): MetaCampaign[] {
+  const norm = (v: string) => v.trim().toLowerCase();
+  const credited = new Map<string, number>();
+  for (const o of countedOrders(orders)) {
+    const c = extras.get(o.sessionId)?.creditedCampaign;
+    if (c) credited.set(norm(c), (credited.get(norm(c)) ?? 0) + 1);
+  }
+  return campaigns.map((c) => ({
+    ...c,
+    purchases: c.purchases + (credited.get(norm(c.id)) ?? 0) + (credited.get(norm(c.name)) ?? 0),
+  }));
+}
+
 /**
  * Totals for the dashboards. Internal test orders and fully refunded orders are
  * dropped; partial refunds count against net revenue.
@@ -169,9 +201,7 @@ export function summarizeOrders(
   extras: Map<string, OrderExtras>,
   days: string[],
 ): FinanceSummary {
-  const kept = orders.filter(
-    (o) => !isInternalEmail(o.email) && !(o.totalCents > 0 && o.refundedCents >= o.totalCents),
-  );
+  const kept = countedOrders(orders);
 
   const daily = new Map(days.map((d) => [d, 0]));
   const bySource = new Map<Source, { orders: number; revenueCents: number }>();
