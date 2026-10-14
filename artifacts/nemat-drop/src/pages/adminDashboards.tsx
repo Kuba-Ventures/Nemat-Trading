@@ -561,7 +561,93 @@ function VisitorFunnel({ ga4 }: { ga4: Block<Ga4> | null }) {
   );
 }
 
-export function GrowthDashboard({ load }: { load: MetricsLoader }) {
+// ─── Weekly email ─────────────────────────────────────────────────────────────
+
+export type WeeklyEmail = { subject: string; html: string; recipients: string[] };
+export type WeeklyEmailApi = {
+  preview: () => Promise<WeeklyEmail>;
+  sendTest: (to: string) => Promise<void>;
+};
+
+// The Friday scorecard email (api-server lib/weeklySnapshot.ts): who gets it,
+// a preview of the latest one, and a test send to a team address.
+function WeeklyEmailCard({ api }: { api: WeeklyEmailApi }) {
+  const [email, setEmail] = useState<WeeklyEmail | null>(null);
+  const [open, setOpen] = useState(false);
+  const [busy, setBusy] = useState<"preview" | "send" | null>(null);
+  const [to, setTo] = useState("");
+  const [note, setNote] = useState<{ ok: boolean; text: string } | null>(null);
+
+  const preview = async () => {
+    setBusy("preview");
+    setNote(null);
+    try {
+      setEmail(await api.preview());
+      setOpen(true);
+    } catch (err: any) {
+      setNote({ ok: false, text: err?.message ?? "Preview failed" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const send = async () => {
+    setBusy("send");
+    setNote(null);
+    try {
+      await api.sendTest(to.trim());
+      setNote({ ok: true, text: `Test sent to ${to.trim()}` });
+    } catch (err: any) {
+      setNote({ ok: false, text: err?.message ?? "Send failed" });
+    } finally {
+      setBusy(null);
+    }
+  };
+
+  const recipients = email?.recipients;
+  return (
+    <Card title="Weekly email">
+      <p className="text-sm text-gray-300">
+        A scorecard of the last 7 days goes out every Friday at 4 PM PT
+        {recipients == null ? "." : recipients.length ? ` to ${recipients.join(", ")}.` : ", once recipients are set on the server (WEEKLY_SNAPSHOT_TO)."}
+      </p>
+      <div className="mt-3 flex flex-wrap items-center gap-2">
+        <button
+          type="button"
+          onClick={open ? () => setOpen(false) : preview}
+          disabled={busy != null}
+          className="rounded-md border border-white/15 px-3 py-1.5 text-sm text-white hover:bg-white/5 disabled:opacity-50"
+        >
+          {busy === "preview" ? "Loading..." : open ? "Hide preview" : "Preview"}
+        </button>
+        <input
+          type="email"
+          value={to}
+          onChange={(e) => setTo(e.target.value)}
+          placeholder="you@qsbsrollover.com"
+          className="w-56 rounded-md border border-white/15 bg-transparent px-3 py-1.5 text-sm text-white placeholder:text-gray-600"
+        />
+        <button
+          type="button"
+          onClick={send}
+          disabled={busy != null || !to.trim()}
+          className="rounded-md border border-white/15 px-3 py-1.5 text-sm text-white hover:bg-white/5 disabled:opacity-50"
+        >
+          {busy === "send" ? "Sending..." : "Send test"}
+        </button>
+        {note && <span className={`text-sm ${note.ok ? "text-emerald-400" : "text-red-400"}`}>{note.text}</span>}
+      </div>
+      {open && email && (
+        <div className="mt-3">
+          <p className="mb-2 text-xs text-gray-500">Subject: {email.subject}</p>
+          <iframe title="Weekly email preview" srcDoc={email.html} className="h-[900px] w-full max-w-[640px] rounded-md bg-white" />
+        </div>
+      )}
+    </Card>
+  );
+}
+
+export function GrowthDashboard({ load, weekly }: { load: MetricsLoader; weekly?: WeeklyEmailApi }) {
   return (
     <Shell title="Growth" load={load}>
       {(m) => {
@@ -669,6 +755,8 @@ export function GrowthDashboard({ load }: { load: MetricsLoader }) {
                 <p className="mt-2 text-xs text-gray-500">From the ad click id and UTM tags saved with each order.</p>
               </Card>
             </div>
+
+            {weekly && <WeeklyEmailCard api={weekly} />}
 
             <Card title="Accounts"><AccountLinks /></Card>
           </div>
