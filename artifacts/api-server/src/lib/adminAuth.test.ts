@@ -31,7 +31,9 @@ test("a tampered or foreign token is rejected", () => {
   const [payload, mac] = token.split(".");
   const later = Buffer.from(JSON.stringify({ exp: Date.now() + 10 * ADMIN_TOKEN_TTL_MS })).toString("base64url");
   assert.equal(verifyAdminToken(`${later}.${mac}`), false);
-  assert.equal(verifyAdminToken(`${payload}.${mac.slice(0, -1)}A`), false);
+  // Swap the MAC's last character for a different one (it is "A" about 1 time in 16).
+  const swapped = mac.endsWith("A") ? "B" : "A";
+  assert.equal(verifyAdminToken(`${payload}.${mac.slice(0, -1)}${swapped}`), false);
   assert.equal(verifyAdminToken(`${token}.extra`), false);
   assert.equal(verifyAdminToken(""), false);
   assert.equal(verifyAdminToken(undefined), false);
