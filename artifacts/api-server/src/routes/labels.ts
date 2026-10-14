@@ -85,6 +85,15 @@ router.get("/labels/:id", async (req, res) => {
 
   const saved = await savedLabel(id);
   if (saved === "pending") return page(res, 200, `<h1>Buying the label&hellip;</h1><p>Refresh in a few seconds.</p>`);
+  if (saved === "shipped") {
+    return page(
+      res,
+      200,
+      `<h1>Already shipped</h1><p class="muted">This order went out without a Shippo label, so there is no label to buy.</p>` +
+        orderBox(o) +
+        `<a class="btn alt" href="/api/labels/${encodeURIComponent(id)}/pdf?t=${t}" target="_blank">Packing slip only</a>`,
+    );
+  }
   if (saved) return page(res, 200, boughtBody(o, saved, t, req.query.bought === "1"));
 
   return page(
@@ -125,7 +134,7 @@ router.get("/labels/:id/pdf", async (req, res) => {
   const o = await loadOrder(id);
   if (!o) return page(res, 404, `<h1>Order not found</h1>`);
   const saved = await savedLabel(id);
-  const pdf = await printablePdf(o, saved && saved !== "pending" ? saved : null);
+  const pdf = await printablePdf(o, saved && saved !== "pending" && saved !== "shipped" ? saved : null);
   if (!pdf) return page(res, 500, `<h1>Couldn't build the PDF</h1>`);
   res
     .set("Cache-Control", "no-store")

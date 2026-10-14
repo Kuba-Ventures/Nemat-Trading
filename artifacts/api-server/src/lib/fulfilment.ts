@@ -67,9 +67,13 @@ export type SavedLabel = {
 };
 
 const PENDING = "pending";
+// Set by hand on orders shipped without a Shippo label (e.g. from the client's
+// house). Like a real transaction id it blocks buyLabelOnce, so postage can
+// never be bought for an order that already went out.
+export const SHIPPED_ELSEWHERE = "shipped-elsewhere";
 
 /** The label already bought for this order, if any. */
-export async function savedLabel(sessionId: string): Promise<SavedLabel | "pending" | null> {
+export async function savedLabel(sessionId: string): Promise<SavedLabel | "pending" | "shipped" | null> {
   const [row] = await db
     .select({
       tx: ordersTable.shippoTransactionId,
@@ -82,6 +86,7 @@ export async function savedLabel(sessionId: string): Promise<SavedLabel | "pendi
     .from(ordersTable)
     .where(eq(ordersTable.stripeSessionId, sessionId));
   if (!row?.tx) return null;
+  if (row.tx === SHIPPED_ELSEWHERE) return "shipped";
   if (row.tx === PENDING || !row.labelUrl) return "pending";
   return {
     trackingNumber: row.trackingNumber ?? "",

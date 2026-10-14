@@ -123,9 +123,18 @@ export type PaidOrder = {
   chargeId: string | null;
 };
 
+/** Label column: a Shippo label was bought, the order went out without one, or neither yet. */
+export type LabelState = "bought" | "shipped" | "none";
+
+export function labelState(shippoTransactionId: string | null | undefined): LabelState {
+  if (!shippoTransactionId || shippoTransactionId === "pending") return "none";
+  if (shippoTransactionId === "shipped-elsewhere") return "shipped";
+  return "bought";
+}
+
 export type OrderExtras = {
   labelCostCents: number | null;
-  labelBought: boolean;
+  label: LabelState;
   source: Source;
 };
 
@@ -146,7 +155,7 @@ export type FinanceSummary = {
     date: string;
     totalCents: number;
     discountCents: number;
-    labelBought: boolean;
+    label: LabelState;
     source: Source;
   }[];
 };
@@ -209,7 +218,7 @@ export function summarizeOrders(
         date: o.created.toISOString(),
         totalCents: o.totalCents - o.refundedCents,
         discountCents: o.discountCents,
-        labelBought: extras.get(o.sessionId)?.labelBought ?? false,
+        label: extras.get(o.sessionId)?.label ?? "none",
         source: extras.get(o.sessionId)?.source ?? "Direct",
       })),
   };
