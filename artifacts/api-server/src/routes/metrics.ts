@@ -6,6 +6,7 @@ import {
   classifySource,
   dayKey,
   daysBetween,
+  feesByCharge,
   parseMetaInsights,
   parseRange,
   summarizeOrders,
@@ -52,11 +53,12 @@ async function loadStripeOrders(stripe: Stripe, range: Range): Promise<PaidOrder
   const created = range.start ? { gte: Math.floor(range.start.getTime() / 1000) } : undefined;
 
   // Fees come from balance transactions, keyed by the charge they belong to.
-  const feeByCharge = new Map<string, number>();
-  for await (const bt of stripe.balanceTransactions.list({ type: "charge", limit: 100, ...(created ? { created } : {}) })) {
-    const src = typeof bt.source === "string" ? bt.source : bt.source?.id;
-    if (src) feeByCharge.set(src, bt.fee);
+  // No type filter here: Cash App Pay posts as "payment", cards as "charge".
+  const transactions: Stripe.BalanceTransaction[] = [];
+  for await (const bt of stripe.balanceTransactions.list({ limit: 100, ...(created ? { created } : {}) })) {
+    transactions.push(bt);
   }
+  const feeByCharge = feesByCharge(transactions);
 
   const out: PaidOrder[] = [];
   for await (const s of stripe.checkout.sessions.list({

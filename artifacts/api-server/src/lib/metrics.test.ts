@@ -6,6 +6,7 @@ import {
   classifySource,
   dayKey,
   daysBetween,
+  feesByCharge,
   isInternalEmail,
   parseMetaInsights,
   parseRange,
@@ -187,5 +188,21 @@ test("parseMetaInsights shows an ACTIVE campaign past its end date as ended, aft
   assert.deepEqual(m.campaigns.map((c) => [c.id, c.state, c.statusLabel]), [
     ["2", "active", "Active"],
     ["1", "ended", "Ended Oct 6"],
+  ]);
+});
+
+test("feesByCharge counts card and Cash App Pay fees, ignores refunds and payouts", () => {
+  const fees = feesByCharge([
+    { type: "charge", fee: 147, source: "ch_card" },
+    { type: "payment", fee: 155, source: "py_cashapp" },
+    { type: "refund", fee: 0, source: "re_x" },
+    { type: "payout", fee: 0, source: { id: "po_x" } },
+    { type: "charge", fee: 99, source: { id: "ch_expanded" } },
+    { type: "charge", fee: 50, source: null },
+  ]);
+  assert.deepEqual([...fees], [
+    ["ch_card", 147],
+    ["py_cashapp", 155],
+    ["ch_expanded", 99],
   ]);
 });
