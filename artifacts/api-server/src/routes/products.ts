@@ -10,6 +10,7 @@ import {
   buildPossiblePulls,
 } from "./scryfall";
 import { currentWindowEnd } from "../lib/drop-window";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
 
@@ -49,16 +50,6 @@ router.get("/products", async (_req, res) => {
     .where(eq(productsTable.active, true));
   res.json(await rollLapsedWindows(products));
 });
-
-// Admin middleware
-function requireAdmin(req: any, res: any, next: any) {
-  const key = req.headers["x-admin-key"];
-  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
 
 // Admin: create product
 router.post("/admin/products", requireAdmin, async (req, res) => {

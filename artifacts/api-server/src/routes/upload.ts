@@ -2,6 +2,7 @@ import { Router } from "express";
 import multer from "multer";
 import path from "path";
 import fs from "fs";
+import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
 
@@ -26,15 +27,6 @@ const upload = multer({
     else cb(new Error("Only image files are allowed"));
   },
 });
-
-function requireAdmin(req: any, res: any, next: any) {
-  const key = req.headers["x-admin-key"];
-  if (!process.env.ADMIN_SECRET || key !== process.env.ADMIN_SECRET) {
-    res.status(401).json({ error: "Unauthorized" });
-    return;
-  }
-  next();
-}
 
 router.post("/admin/upload", requireAdmin, upload.single("image"), (req: any, res: any) => {
   if (!req.file) { res.status(400).json({ error: "No image file provided" }); return; }

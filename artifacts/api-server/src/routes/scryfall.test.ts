@@ -4,8 +4,11 @@ import type { AddressInfo } from "node:net";
 import type { Server } from "node:http";
 import express from "express";
 import scryfallRouter, { parseTcgProductUrl } from "./scryfall";
+import { signAdminToken } from "../lib/adminAuth";
 
-const ADMIN = "test-admin-secret";
+const SECRET = "test-admin-secret";
+// A signed admin token, as the admin page gets from /api/admin/login.
+let ADMIN = "";
 const realFetch = globalThis.fetch;
 let upstreamCalls: string[] = [];
 let server: Server;
@@ -29,7 +32,8 @@ function installUpstreamStub() {
 }
 
 before(async () => {
-  process.env.ADMIN_SECRET = ADMIN;
+  process.env.ADMIN_SECRET = SECRET;
+  ADMIN = signAdminToken()!.token;
   const app = express();
   app.use(express.json());
   app.use("/api", scryfallRouter);
@@ -101,7 +105,7 @@ test("with ADMIN_SECRET unset, admin routes fail closed even for an empty key", 
     const res = await fetch(`${base}/api/tcgplayer/price-check?id=657851`, { headers: { "x-admin-key": "" } });
     assert.equal(res.status, 401);
   } finally {
-    process.env.ADMIN_SECRET = ADMIN;
+    process.env.ADMIN_SECRET = SECRET;
   }
 });
 
