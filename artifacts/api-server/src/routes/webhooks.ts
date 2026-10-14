@@ -7,13 +7,12 @@ import { orderRowFromSession } from "../lib/orderFromSession";
 import {
   sendConfirmationEmail,
   sendOrderEmail,
-  sendTrackingEmail,
   type ConfirmationPack,
   type OrderEmailInput,
-  type ShipmentInfo,
 } from "../lib/orderEmail";
-import { buyLabel } from "../lib/shippo";
-import { buildShippingPdf, fetchLabelPdf } from "../lib/packingSlip";
+import { buildShippingPdf } from "../lib/packingSlip";
+import { labelOrderFromSession, slipFor } from "../lib/fulfilment";
+import { labelPageUrl } from "../lib/labelLink";
 
 export async function handleStripeWebhook(req: Request, res: Response): Promise<void> {
   const sig = req.headers["stripe-signature"];
@@ -123,9 +122,8 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
       paymentIntentId,
     };
 
-    // Confirm to the customer, buy the label, then email sales the label and
-    // packing slip and the customer their tracking. Never throws, and skipped on
-    // retries so a label is never bought twice.
+    // Confirm to the customer, and email sales@ the packing slip with a
+    // "Buy label" link (routes/labels.ts). Never throws, skipped on retries.
     const emailsSent = isNewOrder ? fulfilOrder(full, emailInput) : Promise.resolve();
 
     // Append to Google Sheet (non-blocking failure).
@@ -169,72 +167,11 @@ export async function handleStripeWebhook(req: Request, res: Response): Promise<
 }
 
 async function fulfilOrder(full: Stripe.Checkout.Session, emailInput: OrderEmailInput): Promise<void> {
-  const confirmed = packForSession(full).then((pack) => sendConfirmationEmail(emailInput, pack));
-
-  const shippingRate = full.shipping_cost?.shipping_rate;
-  const label = await buyLabel({
-    sessionId: full.id,
-    quantity: emailInput.quantity,
-    servicelevelToken: full.metadata?.shippoService ?? null,
-    displayName: shippingRate && typeof shippingRate === "object" ? shippingRate.display_name : null,
-    to: {
-      name: emailInput.shipName || emailInput.customerName,
-      street1: emailInput.address1,
-      street2: emailInput.address2,
-      city: emailInput.city,
-      state: emailInput.state,
-      zip: emailInput.zip,
-      country: emailInput.country || "US",
-      phone: emailInput.customerPhone,
-      email: emailInput.customerEmail,
-    },
-  });
-
-  let shipment: ShipmentInfo;
-  if (label.ok) {
-    const { service, costCents, trackingNumber, trackingUrl, fallback } = label;
-    shipment = { ok: true, service, costCents, trackingNumber, trackingUrl, fallback };
-    try {
-      await db
-        .update(ordersTable)
-        .set({
-          shippoTransactionId: label.transactionId,
-          trackingNumber,
-          trackingUrl: trackingUrl || null,
-          labelUrl: label.labelUrl,
-          labelCostCents: costCents,
-        })
-        .where(eq(ordersTable.stripeSessionId, full.id));
-    } catch (err) {
-      console.error("[webhook] saving label failed:", err);
-    }
-  } else {
-    console.error(`[webhook] no label for ${full.id}: ${label.reason}`);
-    shipment = label;
-  }
-
-  const locality = [emailInput.city, emailInput.state].filter(Boolean).join(", ");
-  const pdf = await buildShippingPdf(
-    {
-      orderId: full.id,
-      date: new Date(full.created * 1000),
-      item: emailInput.item,
-      quantity: emailInput.quantity,
-      shipTo: [
-        emailInput.shipName || emailInput.customerName,
-        emailInput.address1,
-        emailInput.address2,
-        [locality, emailInput.zip].filter(Boolean).join(" "),
-      ].filter(Boolean),
-      ...(label.ok ? { trackingNumber: label.trackingNumber, service: label.service } : {}),
-    },
-    label.ok ? await fetchLabelPdf(label.labelUrl) : null,
-  );
-
+  // Postage is only bought when someone clicks "Buy label" in the sales@ email.
+  const slip = await buildShippingPdf(slipFor(labelOrderFromSession(full)), null);
   await Promise.all([
-    sendOrderEmail(emailInput, shipment, pdf),
-    // Tracking goes after the confirmation so they arrive in order.
-    confirmed.then(() => (label.ok ? sendTrackingEmail(emailInput, label) : undefined)),
+    packForSession(full).then((pack) => sendConfirmationEmail(emailInput, pack)),
+    sendOrderEmail(emailInput, labelPageUrl(full.id), slip),
   ]);
 }
 

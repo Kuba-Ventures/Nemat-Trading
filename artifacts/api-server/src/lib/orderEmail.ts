@@ -30,18 +30,6 @@ export type OrderEmailInput = {
   paymentIntentId: string;
 };
 
-// The Shippo label bought for this order (issue #113), or why it wasn't.
-export type ShipmentInfo =
-  | {
-      ok: true;
-      service: string;
-      costCents: number;
-      trackingNumber: string;
-      trackingUrl: string;
-      fallback: boolean;
-    }
-  | { ok: false; reason: string };
-
 export type OrderEmail = {
   subject: string;
   text: string;
@@ -75,24 +63,8 @@ function isDiscounted(o: OrderEmailInput): boolean {
   return !!o.discount && Number(o.discount) > 0;
 }
 
-function shipmentLines(s: ShipmentInfo): string[] {
-  if (!s.ok) {
-    return [
-      "LABEL NOT BOUGHT. Buy it by hand in Shippo or Pirate Ship.",
-      `Reason: ${s.reason}`,
-    ];
-  }
-  return [
-    `${s.service}, $${(s.costCents / 100).toFixed(2)} postage. Label and packing slip are attached.`,
-    ...(s.fallback
-      ? ["The service the customer paid for wasn't offered, so this is the cheapest USPS rate. Check it."]
-      : []),
-    `Tracking: ${s.trackingNumber || "(none returned)"}`,
-    "Cancelled order? Void the label in Shippo within 30 days for a refund.",
-  ];
-}
-
-export function buildOrderEmail(o: OrderEmailInput, shipment?: ShipmentInfo): OrderEmail {
+// labelUrl: the signed "Buy label" page for this order (routes/labels.ts).
+export function buildOrderEmail(o: OrderEmailInput, labelUrl?: string | null): OrderEmail {
   // "City, ST 12345", tolerant of any part missing.
   const locality = [o.city, o.state].filter(Boolean).join(", ");
   const cityLine = [locality, o.zip].filter(Boolean).join(" ");
@@ -112,7 +84,7 @@ export function buildOrderEmail(o: OrderEmailInput, shipment?: ShipmentInfo): Or
   const subject = `New order: ${item}${qty !== "1" ? ` ×${qty}` : ""} · ${total}`;
 
   const text = [
-    ...(shipment ? ["LABEL", ...shipmentLines(shipment).map((l) => `  ${l}`), ""] : []),
+    ...(labelUrl ? ["SHIPPING LABEL", `  Buy label and print: ${labelUrl}`, ""] : []),
     "PACKING LIST",
     `  ${item}  ×${qty}`,
     "",
@@ -136,15 +108,11 @@ export function buildOrderEmail(o: OrderEmailInput, shipment?: ShipmentInfo): Or
   const html = [
     // Explicit white background so dark-mode clients don't invert the layout.
     `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;background:#ffffff;color:#111;padding:8px 4px">`,
-    shipment
-      ? section(
-          "Label",
-          shipmentLines(shipment)
-            .map((l, i) =>
-              i === 0 && !shipment.ok ? `<strong style="color:#b91c1c">${esc(l)}</strong>` : esc(l),
-            )
-            .join("<br>"),
-        )
+    labelUrl
+      ? `<p style="margin:0 0 20px"><a href="${esc(labelUrl)}" style="display:inline-block;background:#111;color:#fff;` +
+        `font:600 15px sans-serif;padding:12px 22px;border-radius:6px;text-decoration:none">Buy label &amp; print &rarr;</a>` +
+        `<br><span style="font-size:13px;color:#6b7280">One click buys the USPS label and emails the customer tracking. ` +
+        `The packing slip is attached.</span></p>`
       : "",
     section("Packing list", `<strong>${esc(item)}</strong> &times;${esc(qty)}`),
     section("Ship to", shipTo.map(esc).join("<br>")),
@@ -214,10 +182,10 @@ async function sendViaResend(email: ResendEmail, idempotencyKey: string, tag: st
 
 export async function sendOrderEmail(
   o: OrderEmailInput,
-  shipment?: ShipmentInfo,
+  labelUrl?: string | null,
   pdf?: Uint8Array | null,
 ): Promise<void> {
-  const email = buildOrderEmail(o, shipment);
+  const email = buildOrderEmail(o, labelUrl);
   await sendViaResend(
     {
       from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
@@ -230,7 +198,7 @@ export async function sendOrderEmail(
         ? {
             attachments: [
               {
-                filename: `label-${o.sessionId.slice(-8)}.pdf`,
+                filename: `packing-slip-${o.sessionId.slice(-8)}.pdf`,
                 content: Buffer.from(pdf).toString("base64"),
               },
             ],
@@ -390,8 +358,10 @@ export async function sendConfirmationEmail(
 // ─── Tracking ────────────────────────────────────────────────────────────────
 // Sent when the label is bought. USPS tracking starts updating at the first scan.
 
+type TrackingTarget = Pick<OrderEmailInput, "sessionId" | "customerEmail">;
+
 export function buildTrackingEmail(
-  o: OrderEmailInput,
+  o: TrackingTarget,
   t: { service: string; trackingNumber: string; trackingUrl: string },
 ): OrderEmail {
   const orderRef = o.sessionId.slice(-8).toUpperCase();
@@ -439,7 +409,7 @@ export function buildTrackingEmail(
 }
 
 export async function sendTrackingEmail(
-  o: OrderEmailInput,
+  o: TrackingTarget,
   t: { service: string; trackingNumber: string; trackingUrl: string },
 ): Promise<void> {
   if (!o.customerEmail || !t.trackingNumber) return;
