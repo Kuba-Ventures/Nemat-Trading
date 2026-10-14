@@ -50,11 +50,10 @@ const COLOR = { revenue: "#1497ad", spend: "#b58424" };
 export const ACCOUNT_LINKS: { label: string; href: string }[] = [
   { label: "Stripe", href: "https://dashboard.stripe.com/acct_1TJwECDFbDz5vOgM/dashboard" },
   { label: "Meta Ads Manager", href: "https://adsmanager.facebook.com/adsmanager/manage/campaigns?act=987622110989837&business_id=2000673880800829" },
-  // TODO: point at the GA4 property once its ID is confirmed.
-  { label: "GA4", href: "https://analytics.google.com/analytics/web/" },
-  // TODO: deep link to the GTM-TVHXMXW5 container once its account/container IDs are confirmed.
-  { label: "Tag Manager", href: "https://tagmanager.google.com/#/home" },
-  // TODO: confirm the property is a domain property; otherwise use the URL-prefix form.
+  // GA4 property 541136891 (account 340998971), confirmed 2026-10-13.
+  { label: "GA4", href: "https://analytics.google.com/analytics/web/#/a340998971p541136891/reports/intelligenthome" },
+  // GTM-TVHXMXW5.
+  { label: "Tag Manager", href: "https://tagmanager.google.com/#/container/accounts/6353614712/containers/257567057" },
   { label: "Search Console", href: "https://search.google.com/search-console?resource_id=sc-domain%3Atommytopdecker.com" },
   { label: "Shippo", href: "https://apps.goshippo.com/shipments" },
   { label: "Railway", href: "https://railway.com/project/6898fb14-7379-4f0b-9924-2b41fd04b78d" },
