@@ -10,6 +10,7 @@ import accountRouter from "./account";
 import adminOrdersRouter from "./orders";
 import labelsRouter from "./labels";
 import adminLoginRouter from "./adminLogin";
+import metricsRouter from "./metrics";
 
 const router: IRouter = Router();
 
@@ -24,5 +25,6 @@ router.use(accountRouter);
 router.use(adminOrdersRouter);
 router.use(labelsRouter);
 router.use(adminLoginRouter);
+router.use(metricsRouter);
 
 export default router;
