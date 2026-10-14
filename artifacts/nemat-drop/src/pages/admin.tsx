@@ -103,28 +103,75 @@ function StatusBadge({ product }: { product: Product }) {
 
 // ─── Shared admin nav ─────────────────────────────────────────────────────────
 
+// Option B from the 2026-10-14 review: a left sidebar that separates the
+// Insights dashboards from Store management. On phones it collapses to a
+// top bar with the same two groups.
+const NAV_GROUPS: { label: string; items: { key: View; label: string }[] }[] = [
+  { label: "Insights", items: [{ key: "finance", label: "Finance" }, { key: "growth", label: "Growth" }] },
+  { label: "Store", items: [{ key: "list", label: "Products" }, { key: "orders", label: "Orders" }, { key: "waitlist", label: "Waitlist" }] },
+];
+
 function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) => void }) {
-  const tab = (key: View, label: string) => (
-    <button
-      onClick={() => onNavigate(key)}
-      className={`text-xs uppercase tracking-[0.15em] transition-colors ${
-        active === key ? "text-cyan-400" : "text-gray-500 hover:text-white"
-      }`}
-    >
-      {label}
-    </button>
-  );
+  // The product form lives under Products.
+  const current = active === "new" || active === "edit" ? "list" : active;
   return (
-    <div className="flex items-center justify-between mb-10">
-      <a href="/" className="text-xs text-gray-500 hover:text-white transition-colors">← Storefront</a>
-      <div className="flex items-center gap-6">
-        {tab("finance", "Finance")}
-        {tab("growth", "Growth")}
-        {tab("list", "Products")}
-        {tab("orders", "Orders")}
-        {tab("waitlist", "Waitlist")}
+    <>
+      {/* Desktop: sidebar */}
+      <aside className="sticky top-0 hidden h-screen w-56 shrink-0 flex-col border-r border-white/10 px-3 py-8 md:flex">
+        <div className="px-3">
+          <div className="text-[10px] uppercase tracking-[0.3em] text-gray-500">Nemat Trading</div>
+          <div className="text-sm font-bold text-white">Admin</div>
+        </div>
+        <nav aria-label="Admin">
+          {NAV_GROUPS.map((g) => (
+            <div key={g.label}>
+              <div className="mb-1 mt-6 px-3 text-[10px] uppercase tracking-[0.2em] text-gray-600">{g.label}</div>
+              {g.items.map((i) => (
+                <button
+                  key={i.key}
+                  onClick={() => onNavigate(i.key)}
+                  aria-current={current === i.key ? "page" : undefined}
+                  className={`block w-full rounded-md px-3 py-2 text-left text-sm transition-colors ${
+                    current === i.key ? "bg-white/[0.07] text-white" : "text-gray-400 hover:bg-white/[0.04] hover:text-white"
+                  }`}
+                >
+                  {i.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
+        <a href="/" className="mt-auto px-3 text-xs text-gray-500 transition-colors hover:text-white">← Storefront</a>
+      </aside>
+
+      {/* Phones: top bar with the same groups, scrolls sideways if needed */}
+      <div className="border-b border-white/10 px-4 pb-3 pt-5 md:hidden">
+        <div className="mb-3 flex items-center justify-between">
+          <div className="text-sm font-bold text-white">Admin</div>
+          <a href="/" className="text-xs text-gray-500 hover:text-white">← Storefront</a>
+        </div>
+        <nav aria-label="Admin" className="-mx-4 flex items-center gap-1 overflow-x-auto px-4">
+          {NAV_GROUPS.map((g, gi) => (
+            <div key={g.label} className="flex shrink-0 items-center gap-1">
+              {gi > 0 && <span className="mx-1 h-4 w-px bg-white/15" />}
+              <span className="px-1 text-[10px] uppercase tracking-[0.2em] text-gray-600">{g.label}</span>
+              {g.items.map((i) => (
+                <button
+                  key={i.key}
+                  onClick={() => onNavigate(i.key)}
+                  aria-current={current === i.key ? "page" : undefined}
+                  className={`shrink-0 rounded-md px-3 py-1.5 text-sm ${
+                    current === i.key ? "bg-white/[0.07] text-white" : "text-gray-400"
+                  }`}
+                >
+                  {i.label}
+                </button>
+              ))}
+            </div>
+          ))}
+        </nav>
       </div>
-    </div>
+    </>
   );
 }
 
@@ -1458,11 +1505,10 @@ export default function AdminPage() {
   }
 
   return (
-    <main className="min-h-screen bg-black text-white px-6 py-10">
+    <main className="min-h-screen bg-black text-white md:flex">
+      <AdminNav active={view} onNavigate={setView} />
+      <div className="min-w-0 flex-1 px-4 py-8 md:px-8 md:py-10">
       <div className={`mx-auto ${view === "finance" || view === "growth" ? "max-w-6xl" : "max-w-4xl"}`}>
-        {(view === "list" || view === "orders" || view === "waitlist" || view === "finance" || view === "growth") && (
-          <AdminNav active={view} onNavigate={setView} />
-        )}
         {view === "list" && (
           <ProductList
             adminKey={adminKey}
@@ -1482,6 +1528,7 @@ export default function AdminPage() {
         {view === "orders" && <OrderList adminKey={adminKey} />}
         {view === "finance" && <FinanceDashboard load={loadMetrics} />}
         {view === "growth" && <GrowthDashboard load={loadMetrics} />}
+      </div>
       </div>
     </main>
   );
