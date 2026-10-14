@@ -1,5 +1,5 @@
-// Weekly snapshot email: a scorecard of the last 7 days (Friday to Thursday,
-// business time) against the 7 before, sent every Friday at 4 PM PT to the
+// Scorecard email: the last 14 days (Friday to Thursday, business time) against
+// the 14 before, sent every other Friday at 4 PM PT to the
 // owner, the client and the team. Pure helpers only, so it can be unit tested;
 // loading data and sending live in weeklySnapshotJob.ts.
 
@@ -7,6 +7,10 @@ import { BUSINESS_TZ, dayKey, startOfBusinessDay } from "./metrics";
 
 export const SEND_WEEKDAY = "Fri";
 export const SEND_HOUR = 16; // 4 PM business time
+export const PERIOD_DAYS = 14; // every other Friday, each email covers the 14 days before it
+// A send Friday. Every 14th day from here is one too (Oct 30, Nov 13, Nov 27, ...).
+// Oct 30 2026 covers Oct 16 to 29, the relaunch campaign's run.
+export const ANCHOR_SEND_DAY = "2026-10-30";
 
 const DAY_MS = 86_400_000;
 
@@ -20,23 +24,39 @@ function midnightDaysBefore(d: Date, n: number): Date {
   return startOfBusinessDay(new Date(startOfBusinessDay(d).getTime() - n * DAY_MS + 12 * 3_600_000));
 }
 
-/** The most recent Friday 4 PM (business time) at or before `now`. */
+/** Whole days between two YYYY-MM-DD keys (b minus a). */
+function daysApart(a: string, b: string): number {
+  return Math.round((Date.parse(`${b}T12:00:00Z`) - Date.parse(`${a}T12:00:00Z`)) / DAY_MS);
+}
+
+/** True for the Fridays the email goes out: the anchor, and every 14 days either side. */
+export function isSendDay(key: string): boolean {
+  const n = daysApart(ANCHOR_SEND_DAY, key);
+  return ((n % PERIOD_DAYS) + PERIOD_DAYS) % PERIOD_DAYS === 0;
+}
+
+/** Sends start on the anchor Friday; earlier slots on the cycle are skipped. */
+export function sendsStarted(key: string): boolean {
+  return key >= ANCHOR_SEND_DAY;
+}
+
+/** The most recent send Friday at 4 PM (business time) at or before `now`. */
 export function lastSendSlot(now: Date): Date {
-  for (let i = 0; i <= 7; i++) {
+  for (let i = 0; i <= PERIOD_DAYS; i++) {
     const day = midnightDaysBefore(now, i);
-    if (weekday(day) !== SEND_WEEKDAY) continue;
+    if (weekday(day) !== SEND_WEEKDAY || !isSendDay(dayKey(day))) continue;
     const slot = new Date(day.getTime() + SEND_HOUR * 3_600_000);
     if (slot.getTime() <= now.getTime()) return slot;
   }
-  // Unreachable: some day in the last 8 had a Friday 4 PM in the past.
-  return new Date(now.getTime() - 7 * DAY_MS);
+  // Unreachable: the last 15 days always include a send Friday that has passed.
+  return new Date(now.getTime() - PERIOD_DAYS * DAY_MS);
 }
 
 export type Window = { start: Date; end: Date; days: string[] };
 
 /**
- * The week a send at `slot` reports on: the 7 full business days before the
- * send day (Friday to Thursday), plus the 7 days before that for comparison.
+ * The period a send at `slot` reports on: the 14 full business days before the
+ * send day (Friday to Thursday), plus the 14 days before that for comparison.
  */
 export function snapshotWindows(slot: Date): { week: Window; prior: Window; key: string } {
   const sendDay = startOfBusinessDay(slot);
@@ -47,7 +67,7 @@ export function snapshotWindows(slot: Date): { week: Window; prior: Window; key:
     for (let i = startBack; i > endBack; i--) days.push(dayKey(midnightDaysBefore(sendDay, i)));
     return { start, end, days };
   };
-  return { week: make(7, 0), prior: make(14, 7), key: dayKey(slot) };
+  return { week: make(PERIOD_DAYS, 0), prior: make(PERIOD_DAYS * 2, PERIOD_DAYS), key: dayKey(slot) };
 }
 
 // ─── Data the email shows ─────────────────────────────────────────────────────
@@ -131,7 +151,7 @@ export function checkoutChip(rate: number | null): Chip {
   return { label: "Average", tone: "neutral" };
 }
 
-/** Up / Down / Flat against last week; `higherIsBetter` picks the color. */
+/** Up / Down / Flat against the previous period; `higherIsBetter` picks the color. */
 export function trendChip(now: number | null, before: number | null, higherIsBetter = true): Chip {
   if (now == null || before == null || now === before) return { label: "Flat", tone: "neutral" };
   const up = now > before;
@@ -152,8 +172,9 @@ export function shortDay(key: string): string {
   return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "UTC" });
 }
 
-function weekdayLabel(key: string): string {
-  return new Date(`${key}T12:00:00Z`).toLocaleDateString("en-US", { weekday: "short", timeZone: "UTC" });
+/** Day of the month, e.g. "16". With 14 bars there's no room for weekday names. */
+function dayLabel(key: string): string {
+  return String(Number(key.slice(8, 10)));
 }
 
 export function rangeLabel(w: Window): string {
@@ -248,7 +269,7 @@ function bars(d: SnapshotData): string {
       const s = h(spend[i] ?? 0);
       const r = h(d.dailyRevenueCents[i] ?? 0);
       return (
-        `<td width="14%" align="center" valign="bottom" style="height:84px">` +
+        `<td width="7%" align="center" valign="bottom" style="height:84px">` +
         (s ? `<div style="display:inline-block;width:10px;height:${s}px;background:${SPEND_COLOR}"></div>` : "") +
         (s && r ? " " : "") +
         (r ? `<div style="display:inline-block;width:10px;height:${r}px;background:${REVENUE_COLOR}"></div>` : "") +
@@ -257,7 +278,7 @@ function bars(d: SnapshotData): string {
     })
     .join("");
   const labels = d.week.days
-    .map((day) => `<td width="14%" align="center" style="font-size:10px;color:#9ca3af;padding-top:4px">${weekdayLabel(day)}</td>`)
+    .map((day) => `<td width="7%" align="center" style="font-size:10px;color:#9ca3af;padding-top:4px">${dayLabel(day)}</td>`)
     .join("");
   return `<table width="100%" cellpadding="0" cellspacing="0"><tr>${cells}</tr><tr>${labels}</tr></table>`;
 }
@@ -268,7 +289,7 @@ export function buildSnapshotEmail(d: SnapshotData): { subject: string; html: st
   const prior = rangeLabel(d.prior);
   const rows = scoreRows(d);
   const best = bestAd(d.ads);
-  const subject = `Tommy Top Decker weekly scorecard: ${week}`;
+  const subject = `Tommy Top Decker scorecard: ${week}`;
 
   const row = (r: ScoreRow) =>
     `<tr>` +
@@ -280,7 +301,7 @@ export function buildSnapshotEmail(d: SnapshotData): { subject: string; html: st
 
   const adSetLines = d.adSets.length
     ? d.adSets.map((a) => `${esc(a.name)}: ${money(a.spendCents)}, ${a.purchases} ${a.purchases === 1 ? "sale" : "sales"}`).join("<br>")
-    : d.dailySpendCents == null ? "Meta data unavailable" : "No ad spend this week";
+    : d.dailySpendCents == null ? "Meta data unavailable" : "No ad spend in this period";
   const bestLine = best
     ? `<br>Best ad: ${esc(best.name)}${best.ctr != null ? ` (${pct(best.ctr)} click rate)` : ""}`
     : "";
@@ -293,15 +314,15 @@ export function buildSnapshotEmail(d: SnapshotData): { subject: string; html: st
     `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;color:#111111">`,
     `<tr><td bgcolor="#000000" style="background:#000000;padding:22px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr>`,
     `<td><span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>`,
-    `<span style="display:block;font-family:'Arial Black',Impact,Helvetica,sans-serif;font-weight:900;font-size:22px;text-transform:uppercase;color:#ffffff;margin-top:8px">Weekly scorecard</span></td>`,
+    `<span style="display:block;font-family:'Arial Black',Impact,Helvetica,sans-serif;font-weight:900;font-size:22px;text-transform:uppercase;color:#ffffff;margin-top:8px">2-week scorecard</span></td>`,
     `<td align="right" valign="bottom" style="font-size:12px;color:#9ca3af">${esc(week)}<br>vs. ${esc(prior)}</td>`,
     `</tr></table></td></tr>`,
     `<tr><td style="padding:10px 24px 0;font-size:12px;color:#6b7280">Test orders excluded.${d.problems.length ? ` <span style="color:#b42318">${esc(d.problems.join(". "))}.</span>` : ""}</td></tr>`,
     `<tr><td style="padding:14px 24px 0"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">`,
     `<tr style="font-size:10px;letter-spacing:.12em;color:#6b7280">`,
     `<td style="padding:6px 0;border-bottom:2px solid #111111">METRIC</td>`,
-    `<td align="right" style="padding:6px 0;border-bottom:2px solid #111111">THIS WEEK</td>`,
-    `<td align="right" style="padding:6px 0;border-bottom:2px solid #111111">VS LAST WEEK</td>`,
+    `<td align="right" style="padding:6px 0;border-bottom:2px solid #111111">THESE 2 WKS</td>`,
+    `<td align="right" style="padding:6px 0;border-bottom:2px solid #111111">VS PRIOR 2 WKS</td>`,
     `<td align="right" style="padding:6px 0;border-bottom:2px solid #111111">STATUS</td></tr>`,
     ...rows.map(row),
     `</table></td></tr>`,
@@ -313,19 +334,19 @@ export function buildSnapshotEmail(d: SnapshotData): { subject: string; html: st
     `Stripe fees: ${money(t.feeCents)}<br>Postage: ${money(t.postageCents)}<br>Discounts: ${money(t.discountCents)}<br>Refunds: ${money(t.refundCents)}</td>`,
     `</tr></table></td></tr>`,
     `<tr><td align="center" style="padding:26px 0 12px"><a href="${esc(d.dashboardUrl)}" style="display:inline-block;background:#000000;color:#ffffff;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.25em;padding:12px 30px;border-radius:4px;text-decoration:none">OPEN DASHBOARD</a></td></tr>`,
-    `<tr><td align="center" style="padding:0 24px 26px;font-size:11px;color:#9ca3af">Sent every Friday at 4 PM PT. Live numbers anytime on the dashboard.</td></tr>`,
+    `<tr><td align="center" style="padding:0 24px 26px;font-size:11px;color:#9ca3af">Sent every other Friday at 4 PM PT. Live numbers anytime on the dashboard.</td></tr>`,
     `</table></td></tr></table></div>`,
   ].join("");
 
   const text = [
-    `Tommy Top Decker weekly scorecard`,
+    `Tommy Top Decker 2-week scorecard`,
     `${week} (vs. ${prior}). Test orders excluded.`,
     ...(d.problems.length ? [d.problems.join(". ") + "."] : []),
     ``,
     ...rows.map((r) => `${r.metric}${r.note ? ` (${r.note})` : ""}: ${r.value} (${r.change}, ${r.chip.label})`),
     ``,
     `Campaign:`,
-    ...(d.adSets.length ? d.adSets.map((a) => `- ${a.name}: ${money(a.spendCents)}, ${a.purchases} ${a.purchases === 1 ? "sale" : "sales"}`) : ["- No ad spend this week"]),
+    ...(d.adSets.length ? d.adSets.map((a) => `- ${a.name}: ${money(a.spendCents)}, ${a.purchases} ${a.purchases === 1 ? "sale" : "sales"}`) : ["- No ad spend in this period"]),
     ...(best ? [`- Best ad: ${best.name}`] : []),
     ``,
     `Money: Stripe fees ${money(t.feeCents)}, postage ${money(t.postageCents)}, discounts ${money(t.discountCents)}, refunds ${money(t.refundCents)}.`,
