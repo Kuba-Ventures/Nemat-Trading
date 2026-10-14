@@ -1397,8 +1397,9 @@ export default function AdminPage() {
   const [view, setView] = useState<View>("list");
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
-  const loadMetrics = useCallback(async (range: string): Promise<Metrics> => {
-    const res = await adminFetch(`${API_URL}/api/admin/metrics?range=${encodeURIComponent(range)}`);
+  const loadMetrics = useCallback(async (range: string, opts?: { fresh?: boolean }): Promise<Metrics> => {
+    const fresh = opts?.fresh ? "&fresh=1" : "";
+    const res = await adminFetch(`${API_URL}/api/admin/metrics?range=${encodeURIComponent(range)}${fresh}`);
     if (!res.ok) throw new Error(`API returned ${res.status}`);
     return res.json();
   }, []);
