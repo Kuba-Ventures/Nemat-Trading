@@ -138,25 +138,15 @@ test("no discount line when no promotion code was used", () => {
   }
 });
 
-test("sales email leads with the bought label, or a loud note when there isn't one", async () => {
+test("sales email carries the Buy label link when there is one", async () => {
   const { buildTrackingEmail } = await import("./orderEmail");
-  const ok = buildOrderEmail(ORDER, {
-    ok: true,
-    service: "USPS Ground Advantage",
-    costCents: 520,
-    trackingNumber: "9400100000000000000000",
-    trackingUrl: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400100000000000000000",
-    fallback: false,
-  });
-  assert.match(ok.text, /^LABEL\n  USPS Ground Advantage, \$5\.20 postage/);
-  assert.ok(ok.html.includes("9400100000000000000000"));
-  assert.ok(!ok.text.includes("cheapest USPS rate"));
-
-  const failed = buildOrderEmail(ORDER, { ok: false, reason: "Address not found" });
-  assert.match(failed.text, /LABEL NOT BOUGHT/);
-  assert.match(failed.html, /Reason: Address not found/);
-
-  assert.ok(!buildOrderEmail(ORDER).text.includes("LABEL"));
+  const url = "https://api.example.com/api/labels/cs_test_123?t=abc";
+  const withLink = buildOrderEmail(ORDER, url);
+  assert.match(withLink.text, /^SHIPPING LABEL\n  Buy label and print: https:\/\/api\.example\.com/);
+  assert.ok(withLink.html.includes("Buy label &amp; print"));
+  assert.ok(withLink.html.includes(url));
+  assert.ok(!buildOrderEmail(ORDER).text.includes("SHIPPING LABEL"));
+  assert.ok(!buildOrderEmail(ORDER, null).html.includes("Buy label"));
 
   const t = buildTrackingEmail(ORDER, {
     service: "USPS Ground Advantage",
