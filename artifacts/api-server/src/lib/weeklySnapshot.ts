@@ -207,6 +207,8 @@ const CHIP_STYLE: Record<Tone, string> = {
 };
 const CHANGE_COLOR: Record<Tone, string> = { good: "#15803d", bad: "#b42318", neutral: "#6b7280" };
 const SPEND_COLOR = "#d4a017";
+// The TT card mark, served by the storefront. A PNG, since Gmail drops SVG.
+const LOGO_URL = "https://tommytopdecker.com/favicon.png";
 const REVENUE_COLOR = "#0891b2";
 
 // better: which direction of change is good news ("up"), bad news ("down"), or neither ("none").
@@ -312,11 +314,12 @@ export function buildSnapshotEmail(d: SnapshotData): { subject: string; html: st
     `<div style="margin:0;background:#f4f0e8">`,
     `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#f4f0e8" style="background:#f4f0e8"><tr><td align="center" style="padding:20px 0">`,
     `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#ffffff" style="max-width:600px;background:#ffffff;border-radius:10px;overflow:hidden;font-family:Helvetica,Arial,sans-serif;color:#111111">`,
-    `<tr><td bgcolor="#000000" style="background:#000000;padding:22px 24px"><table width="100%" cellpadding="0" cellspacing="0"><tr>`,
-    `<td><span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>`,
-    `<span style="display:block;font-family:'Arial Black',Impact,Helvetica,sans-serif;font-weight:900;font-size:22px;text-transform:uppercase;color:#ffffff;margin-top:8px">2-week scorecard</span></td>`,
-    `<td align="right" valign="bottom" style="font-size:12px;color:#9ca3af">${esc(week)}<br>vs. ${esc(prior)}</td>`,
-    `</tr></table></td></tr>`,
+    `<tr><td bgcolor="#000000" align="center" style="background:#000000;padding:26px 24px 22px;text-align:center">`,
+    `<img src="${LOGO_URL}" width="64" height="64" alt="Tommy Top Decker" style="display:block;border:0;width:64px;height:64px;margin:0 auto">`,
+    `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8;margin-top:10px">TOMMYTOPDECKER</span>`,
+    `<span style="display:block;font-family:'Arial Black',Impact,Helvetica,sans-serif;font-weight:900;font-size:22px;text-transform:uppercase;color:#ffffff;margin-top:6px">2-week scorecard</span>`,
+    `<span style="display:block;font-size:12px;color:#9ca3af;margin-top:8px">${esc(week)} vs. ${esc(prior)}</span>`,
+    `</td></tr>`,
     `<tr><td style="padding:10px 24px 0;font-size:12px;color:#6b7280">Test orders excluded.${d.problems.length ? ` <span style="color:#b42318">${esc(d.problems.join(". "))}.</span>` : ""}</td></tr>`,
     `<tr><td style="padding:14px 24px 0"><table width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">`,
     `<tr style="font-size:10px;letter-spacing:.12em;color:#6b7280">`,
