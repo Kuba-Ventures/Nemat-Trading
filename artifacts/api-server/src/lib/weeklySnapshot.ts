@@ -8,9 +8,9 @@ import { BUSINESS_TZ, dayKey, startOfBusinessDay } from "./metrics";
 export const SEND_WEEKDAY = "Fri";
 export const SEND_HOUR = 16; // 4 PM business time
 export const PERIOD_DAYS = 14; // every other Friday, each email covers the 14 days before it
-// A send Friday. Every 14th day from here is one too (Oct 30, Nov 13, Nov 27, ...).
-// Oct 30 2026 covers Oct 16 to 29, the relaunch campaign's run.
-export const ANCHOR_SEND_DAY = "2026-10-30";
+// A send Friday. Every 14th day from here is one too (Oct 23, Nov 6, Nov 20, ...).
+// Oct 23 2026 covers Oct 9 to 22, which includes the relaunch from Oct 14.
+export const ANCHOR_SEND_DAY = "2026-10-23";
 
 const DAY_MS = 86_400_000;
 
