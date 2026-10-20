@@ -194,7 +194,7 @@ export function changeLabel(now: number | null, before: number | null, kind: "mo
   return `${arrow} ${Math.round(v)}`;
 }
 
-function esc(s: string): string {
+export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 

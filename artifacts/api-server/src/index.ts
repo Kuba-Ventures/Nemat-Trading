@@ -1,6 +1,7 @@
 import app from "./app";
 import { pool } from "@workspace/db";
 import { startWeeklySnapshotScheduler } from "./lib/weeklySnapshotJob";
+import { startMetaAdsCheckScheduler } from "./lib/metaAdsCheckJob";
 
 const rawPort = process.env["PORT"];
 
@@ -85,8 +86,9 @@ async function migrate() {
       subscribed_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
-    -- One row per weekly snapshot email (week = the Friday it went out, business
-    -- time). The row is claimed before sending so a week is never sent twice.
+    -- One row per scheduled email (week = the Friday a scorecard went out, or
+    -- "meta-check-YYYY-MM-DD" for a Meta ads check, business time). The row is
+    -- claimed before sending so nothing is ever sent twice.
     CREATE TABLE IF NOT EXISTS weekly_snapshots (
       week TEXT PRIMARY KEY,
       recipients TEXT,
@@ -129,6 +131,7 @@ migrate()
     app.listen(port, () => {
       console.log(`Server listening on port ${port}`);
       startWeeklySnapshotScheduler();
+      startMetaAdsCheckScheduler();
     });
   })
   .catch((err) => {
