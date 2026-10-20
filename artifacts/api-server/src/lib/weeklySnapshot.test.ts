@@ -35,56 +35,56 @@ const week = (over: Partial<WeekNumbers> = {}): WeekNumbers => ({
 });
 
 test("isSendDay: the anchor and every 14 days either side", () => {
-  assert.equal(isSendDay("2026-10-30"), true);
-  assert.equal(isSendDay("2026-11-13"), true);
-  assert.equal(isSendDay("2026-11-27"), true);
-  assert.equal(isSendDay("2026-10-16"), true); // on the cycle, but before sends start
-  assert.equal(isSendDay("2026-11-06"), false);
-  assert.equal(isSendDay("2026-10-23"), false);
+  assert.equal(isSendDay("2026-10-23"), true);
+  assert.equal(isSendDay("2026-11-06"), true);
+  assert.equal(isSendDay("2026-11-20"), true);
+  assert.equal(isSendDay("2026-10-09"), true); // on the cycle, but before sends start
+  assert.equal(isSendDay("2026-10-30"), false);
+  assert.equal(isSendDay("2026-11-13"), false);
 });
 
-test("sendsStarted: nothing goes out before Oct 30 2026", () => {
-  assert.equal(sendsStarted("2026-10-16"), false);
-  assert.equal(sendsStarted("2026-10-30"), true);
-  assert.equal(sendsStarted("2026-11-13"), true);
+test("sendsStarted: nothing goes out before Oct 23 2026", () => {
+  assert.equal(sendsStarted("2026-10-09"), false);
+  assert.equal(sendsStarted("2026-10-23"), true);
+  assert.equal(sendsStarted("2026-11-06"), true);
 });
 
 test("lastSendSlot: before 4 PM PT on a send Friday it's still the previous one", () => {
-  // Fri Oct 30 2026, 3:59 PM PDT = 22:59 UTC
-  assert.equal(lastSendSlot(new Date("2026-10-30T22:59:00Z")).toISOString(), "2026-10-16T23:00:00.000Z");
+  // Fri Oct 23 2026, 3:59 PM PDT = 22:59 UTC
+  assert.equal(lastSendSlot(new Date("2026-10-23T22:59:00Z")).toISOString(), "2026-10-09T23:00:00.000Z");
 });
 
 test("lastSendSlot: at 4 PM PT on a send Friday, and through the off Friday after", () => {
-  assert.equal(lastSendSlot(new Date("2026-10-30T23:00:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
-  // Fri Nov 6 is an off week: still points at Oct 30
-  assert.equal(lastSendSlot(new Date("2026-11-07T01:00:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
+  assert.equal(lastSendSlot(new Date("2026-10-23T23:00:00Z")).toISOString(), "2026-10-23T23:00:00.000Z");
+  // Fri Oct 30 is an off week: still points at Oct 23
+  assert.equal(lastSendSlot(new Date("2026-10-31T01:00:00Z")).toISOString(), "2026-10-23T23:00:00.000Z");
 });
 
 test("lastSendSlot: after DST ends, 4 PM PST is 00:00 UTC Saturday", () => {
-  // DST ends Sun Nov 1 2026. Fri Nov 13, 4 PM PST = Sat Nov 14 00:00 UTC
-  assert.equal(lastSendSlot(new Date("2026-11-14T01:00:00Z")).toISOString(), "2026-11-14T00:00:00.000Z");
-  assert.equal(lastSendSlot(new Date("2026-11-13T23:59:00Z")).toISOString(), "2026-10-30T23:00:00.000Z");
+  // DST ends Sun Nov 1 2026. Fri Nov 6, 4 PM PST = Sat Nov 7 00:00 UTC
+  assert.equal(lastSendSlot(new Date("2026-11-07T01:00:00Z")).toISOString(), "2026-11-07T00:00:00.000Z");
+  assert.equal(lastSendSlot(new Date("2026-11-06T23:59:00Z")).toISOString(), "2026-10-23T23:00:00.000Z");
 });
 
 test("snapshotWindows: the 14 days before the send Friday, and the 14 before that", () => {
-  const { week: w, prior, key } = snapshotWindows(new Date("2026-10-30T23:00:00Z"));
-  assert.equal(key, "2026-10-30");
+  const { week: w, prior, key } = snapshotWindows(new Date("2026-10-23T23:00:00Z"));
+  assert.equal(key, "2026-10-23");
   assert.equal(w.days.length, 14);
-  assert.equal(w.days[0], "2026-10-16");
-  assert.equal(w.days[13], "2026-10-29");
-  assert.equal(w.start.toISOString(), "2026-10-16T07:00:00.000Z"); // midnight PDT
-  assert.equal(w.end.toISOString(), "2026-10-30T06:59:59.999Z");
-  assert.equal(prior.days[0], "2026-10-02");
-  assert.equal(prior.days[13], "2026-10-15");
-  assert.equal(rangeLabel(w), "Oct 16 to Oct 29");
+  assert.equal(w.days[0], "2026-10-09");
+  assert.equal(w.days[13], "2026-10-22");
+  assert.equal(w.start.toISOString(), "2026-10-09T07:00:00.000Z"); // midnight PDT
+  assert.equal(w.end.toISOString(), "2026-10-23T06:59:59.999Z");
+  assert.equal(prior.days[0], "2026-09-25");
+  assert.equal(prior.days[13], "2026-10-08");
+  assert.equal(rangeLabel(w), "Oct 9 to Oct 22");
 });
 
 test("snapshotWindows: a period spanning the DST change still has 14 days", () => {
-  const { week: w } = snapshotWindows(new Date("2026-11-14T00:00:00Z"));
+  const { week: w } = snapshotWindows(new Date("2026-11-07T00:00:00Z"));
   assert.equal(w.days.length, 14);
-  assert.equal(w.days[0], "2026-10-30");
-  assert.equal(w.days[13], "2026-11-12");
-  assert.equal(w.end.toISOString(), "2026-11-13T07:59:59.999Z"); // midnight PST
+  assert.equal(w.days[0], "2026-10-23");
+  assert.equal(w.days[13], "2026-11-05");
+  assert.equal(w.end.toISOString(), "2026-11-06T07:59:59.999Z"); // midnight PST
 });
 
 test("costPerSale, checkoutRate and keptCents", () => {
