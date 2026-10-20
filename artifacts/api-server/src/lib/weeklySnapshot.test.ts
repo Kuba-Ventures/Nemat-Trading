@@ -160,6 +160,8 @@ const sample = (): SnapshotData => {
 test("buildSnapshotEmail: subject, scorecard values and campaign block", () => {
   const e = buildSnapshotEmail(sample());
   assert.equal(e.subject, "Tommy Top Decker scorecard: Oct 16 to Oct 29");
+  assert.match(e.html, /<img src="https:\/\/tommytopdecker\.com\/favicon\.png" width="64" height="64" alt="Tommy Top Decker"/);
+  assert.match(e.html, /Oct 16 to Oct 29 vs\. Oct 2 to Oct 15/);
   for (const s of ["$43.07", "$133.88", "Off target", "4.9%", "-$92.36", "Prospecting: $107.10, 1 sale", "Best ad: Price Drop counter", "vs. Oct 2 to Oct 15", "Sent every other Friday", "https://tommytopdecker.com/admin"]) {
     assert.ok(e.html.includes(s), `html missing ${s}`);
   }
