@@ -302,6 +302,9 @@ const OTHER_LABEL: Record<string, string> = {
   PENDING_REVIEW: "In review",
 };
 const PAUSED = new Set(["PAUSED", "CAMPAIGN_PAUSED", "ADSET_PAUSED"]);
+// Just launched or blocked before spending: listed even at $0 so a new campaign
+// shows up the day it goes live, not only once it starts spending.
+const LAUNCHING = new Set(["IN_PROCESS", "PENDING_REVIEW", "WITH_ISSUES", "DISAPPROVED"]);
 
 /**
  * When a campaign stops: its own stop_time, else the latest ad set end_time,
@@ -355,6 +358,9 @@ const toCents = (s: string | undefined) => Math.round((Number(s) || 0) * 100);
  * (for effective_status and end dates). Campaigns that are running or spent in
  * range are kept.
  */
+// Running first, then launching, then everything else.
+const rank = (c: MetaCampaign) => (c.state === "active" ? 0 : c.state === "other" && LAUNCHING.has(c.status) ? 1 : 2);
+
 export function parseMetaInsights(
   campaignInsights: { data?: InsightRow[] },
   dailyInsights: { data?: InsightRow[] },
@@ -407,8 +413,8 @@ export function parseMetaInsights(
   }
 
   const campaigns = [...byId.values()]
-    .filter((c) => c.state === "active" || c.spendCents > 0)
-    .sort((a, b) => Number(b.state === "active") - Number(a.state === "active") || b.spendCents - a.spendCents);
+    .filter((c) => c.state === "active" || (c.state === "other" && LAUNCHING.has(c.status)) || c.spendCents > 0)
+    .sort((a, b) => rank(a) - rank(b) || b.spendCents - a.spendCents);
 
   return {
     spendCents: campaigns.reduce((n, c) => n + c.spendCents, 0),

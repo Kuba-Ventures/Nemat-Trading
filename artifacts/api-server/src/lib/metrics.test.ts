@@ -193,6 +193,30 @@ test("parseMetaInsights shows an ACTIVE campaign past its end date as ended, aft
   ]);
 });
 
+test("parseMetaInsights lists a just-launched campaign at $0, after running ones", () => {
+  const m = parseMetaInsights(
+    { data: [{ campaign_id: "1", campaign_name: "TMNT", spend: "133.88" }] },
+    { data: [] },
+    {
+      data: [
+        { id: "1", name: "TMNT", effective_status: "COMPLETED" },
+        { id: "2", name: "Relaunch", effective_status: "ACTIVE" },
+        { id: "3", name: "Reel test", effective_status: "PENDING_REVIEW" },
+        { id: "4", name: "Starting", effective_status: "IN_PROCESS" },
+        { id: "5", name: "Old", effective_status: "ARCHIVED" }, // no spend, not launching: hidden
+      ],
+    },
+    [],
+    NOW,
+  );
+  assert.deepEqual(m.campaigns.map((c) => [c.id, c.statusLabel]), [
+    ["2", "Active"],
+    ["3", "In review"],
+    ["4", "Starting"],
+    ["1", "Ended"],
+  ]);
+});
+
 test("feesByCharge counts card and Cash App Pay fees, ignores refunds and payouts", () => {
   const fees = feesByCharge([
     { type: "charge", fee: 147, source: "ch_card" },
