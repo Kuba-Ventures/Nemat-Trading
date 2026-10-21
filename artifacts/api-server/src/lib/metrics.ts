@@ -270,14 +270,44 @@ export type MetaCampaign = {
   purchases: number;
 };
 
+export type AdFormat = "video" | "image";
+
+export type MetaAd = {
+  id: string;
+  name: string;
+  campaignId: string;
+  format: AdFormat;
+  status: string; // effective_status
+  spendCents: number;
+  impressions: number;
+  linkClicks: number;
+  purchases: number; // Meta-tracked only; hand-credited orders are per campaign
+};
+
+export type FormatTotals = {
+  ads: number;
+  spendCents: number;
+  impressions: number;
+  linkClicks: number;
+  purchases: number;
+  ctr: number | null; // link clicks / impressions, percent
+  costPerClickCents: number | null;
+};
+
 export type MetaSummary = {
   spendCents: number;
   daily: { date: string; spendCents: number }[];
   campaigns: MetaCampaign[];
+  // Videos (Reels) next to images, in the campaigns that run any video ad.
+  ads: MetaAd[];
+  formats: Record<AdFormat, FormatTotals> | null;
 };
 
 type InsightAction = { action_type?: string; value?: string };
 type InsightRow = {
+  ad_id?: string;
+  impressions?: string;
+  inline_link_clicks?: string;
   campaign_id?: string;
   campaign_name?: string;
   spend?: string;
@@ -420,5 +450,72 @@ export function parseMetaInsights(
     spendCents: campaigns.reduce((n, c) => n + c.spendCents, 0),
     daily: [...daily].map(([date, spendCents]) => ({ date, spendCents })),
     campaigns,
+    ads: [],
+    formats: null,
   };
+}
+
+type AdRow = {
+  id?: string;
+  name?: string;
+  campaign_id?: string;
+  effective_status?: string;
+  creative?: { object_type?: string; video_id?: string; asset_feed_spec?: { videos?: unknown[] } };
+};
+
+export function adFormat(creative: AdRow["creative"]): AdFormat {
+  return creative?.video_id || creative?.object_type === "VIDEO" || creative?.asset_feed_spec?.videos?.length
+    ? "video"
+    : "image";
+}
+
+/**
+ * Per-ad numbers for the Reels vs images card. Only campaigns running at least
+ * one video ad are compared, so an old image-only campaign doesn't skew it.
+ * Ads with no impressions in the range are left out.
+ */
+export function parseMetaAds(
+  adInsights: { data?: InsightRow[] },
+  adList: { data?: AdRow[] },
+): Pick<MetaSummary, "ads" | "formats"> {
+  const stats = new Map((adInsights.data ?? []).filter((r) => r.ad_id).map((r) => [r.ad_id!, r]));
+  const all: MetaAd[] = [];
+  for (const a of adList.data ?? []) {
+    const r = a.id ? stats.get(a.id) : undefined;
+    if (!a.id || !r || !(Number(r.impressions) > 0)) continue;
+    all.push({
+      id: a.id,
+      name: a.name ?? "Untitled ad",
+      campaignId: a.campaign_id ?? "",
+      format: adFormat(a.creative),
+      status: a.effective_status ?? "UNKNOWN",
+      spendCents: toCents(r.spend),
+      impressions: Number(r.impressions) || 0,
+      linkClicks: Number(r.inline_link_clicks) || 0,
+      purchases: purchasesFrom(r.actions),
+    });
+  }
+  const withVideo = new Set(all.filter((a) => a.format === "video").map((a) => a.campaignId));
+  const ads = all
+    .filter((a) => withVideo.has(a.campaignId))
+    .sort((a, b) => Number(b.format === "video") - Number(a.format === "video") || b.spendCents - a.spendCents);
+  if (!ads.length) return { ads, formats: null };
+
+  const totals = (format: AdFormat): FormatTotals => {
+    const group = ads.filter((a) => a.format === format);
+    const sum = (k: "spendCents" | "impressions" | "linkClicks" | "purchases") => group.reduce((n, a) => n + a[k], 0);
+    const spendCents = sum("spendCents");
+    const impressions = sum("impressions");
+    const linkClicks = sum("linkClicks");
+    return {
+      ads: group.length,
+      spendCents,
+      impressions,
+      linkClicks,
+      purchases: sum("purchases"),
+      ctr: impressions ? (linkClicks / impressions) * 100 : null,
+      costPerClickCents: linkClicks ? Math.round(spendCents / linkClicks) : null,
+    };
+  };
+  return { ads, formats: { video: totals("video"), image: totals("image") } };
 }

@@ -40,6 +40,31 @@ type Meta = {
     ctr: number | null;
     purchases: number;
   }[];
+  // Optional until every API deploy sends them.
+  ads?: MetaAd[];
+  formats?: Record<AdFormat, FormatTotals> | null;
+};
+
+type AdFormat = "video" | "image";
+type MetaAd = {
+  id: string;
+  name: string;
+  campaignId: string;
+  format: AdFormat;
+  status: string;
+  spendCents: number;
+  impressions: number;
+  linkClicks: number;
+  purchases: number;
+};
+type FormatTotals = {
+  ads: number;
+  spendCents: number;
+  impressions: number;
+  linkClicks: number;
+  purchases: number;
+  ctr: number | null;
+  costPerClickCents: number | null;
 };
 
 type Ga4 = {
@@ -156,6 +181,85 @@ function useMetrics(load: MetricsLoader, range: string) {
 
   const syncNow = useCallback(() => { fetchMetrics("force"); }, [fetchMetrics]);
   return { data, error, loading, syncing, syncNow };
+}
+
+// ─── Reels vs images ──────────────────────────────────────────────────────────
+
+const FORMAT_TAG: Record<AdFormat, { one: string; many: string; tag: string; bar: string }> = {
+  video: { one: "Reel", many: "Reels", tag: "bg-violet-400/15 text-violet-300", bar: "bg-violet-400" },
+  image: { one: "Image", many: "Images", tag: "bg-sky-400/15 text-sky-300", bar: "bg-sky-400" },
+};
+
+function FormatTag({ format, plural }: { format: AdFormat; plural?: boolean }) {
+  const f = FORMAT_TAG[format];
+  return (
+    <span className={`mr-1.5 inline-block rounded px-1.5 py-px align-[1px] text-[10px] font-semibold uppercase tracking-[0.06em] ${f.tag}`}>
+      {plural ? f.many : f.one}
+    </span>
+  );
+}
+
+const pct = (n: number | null) => (n == null ? "-" : `${n.toFixed(1)}%`);
+
+function ReelsVsImagesCard({ formats, ads }: { formats: Record<AdFormat, FormatTotals>; ads: MetaAd[] }) {
+  const { video, image } = formats;
+  const best = video.ctr != null && image.ctr != null && video.ctr !== image.ctr ? (video.ctr > image.ctr ? "video" : "image") : null;
+  const top = Math.max(video.ctr ?? 0, image.ctr ?? 0);
+  return (
+    <Card title="Reels vs images">
+      <div className="grid gap-3 sm:grid-cols-2">
+        {(["video", "image"] as const).map((k) => {
+          const t = formats[k];
+          return (
+            <div key={k} className="rounded-lg border border-white/10 p-3">
+              <div className="mb-2 flex items-center gap-1.5 text-xs text-white">
+                <FormatTag format={k} plural />
+                {t.ads} {t.ads === 1 ? "ad" : "ads"}
+                {best === k && <span className="text-[11px] font-semibold text-emerald-400">Higher CTR</span>}
+              </div>
+              <div className="text-2xl font-bold tabular-nums text-white">{pct(t.ctr)}</div>
+              <div className="text-[11px] text-gray-500">Link CTR</div>
+              <dl className="mt-2 grid grid-cols-[1fr_auto] gap-x-2 gap-y-0.5 text-xs text-gray-400">
+                <dt>Spend</dt><dd className="text-right tabular-nums text-gray-200">{money(t.spendCents)}</dd>
+                <dt>Impressions</dt><dd className="text-right tabular-nums text-gray-200">{t.impressions.toLocaleString()}</dd>
+                <dt>Link clicks</dt><dd className="text-right tabular-nums text-gray-200">{t.linkClicks.toLocaleString()}</dd>
+                <dt>Cost / click</dt><dd className="text-right tabular-nums text-gray-200">{money(t.costPerClickCents)}</dd>
+                <dt>Sales</dt><dd className="text-right tabular-nums text-gray-200">{t.purchases}</dd>
+              </dl>
+              <div className="mt-2.5 h-1.5 overflow-hidden rounded bg-white/5">
+                <i className={`block h-full ${FORMAT_TAG[k].bar}`} style={{ width: `${top ? ((t.ctr ?? 0) / top) * 100 : 0}%` }} />
+              </div>
+            </div>
+          );
+        })}
+      </div>
+      <div className="mt-3 overflow-x-auto">
+        <table className="w-full text-sm">
+          <thead>
+            <tr className="text-left text-[11px] uppercase tracking-[0.08em] text-gray-500">
+              <th className="py-1.5 font-medium">Ad</th>
+              <th className="py-1.5 text-right font-medium">Spend</th>
+              <th className="py-1.5 text-right font-medium">Clicks</th>
+              <th className="py-1.5 text-right font-medium">CTR</th>
+              <th className="py-1.5 text-right font-medium">Sales</th>
+            </tr>
+          </thead>
+          <tbody>
+            {ads.map((a) => (
+              <tr key={a.id} className="border-t border-white/5">
+                <td className="py-2 pr-3 text-white"><FormatTag format={a.format} />{a.name}</td>
+                <td className="py-2 text-right tabular-nums text-white">{money(a.spendCents)}</td>
+                <td className="py-2 text-right tabular-nums text-gray-300">{a.linkClicks.toLocaleString()}</td>
+                <td className="py-2 text-right tabular-nums text-gray-300">{pct(a.impressions ? (a.linkClicks / a.impressions) * 100 : null)}</td>
+                <td className="py-2 text-right tabular-nums text-gray-300">{a.purchases}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      </div>
+      <p className="mt-2 text-xs text-gray-500">Ads in campaigns running Reels, for this date range. Clicks are link clicks; sales are what Meta tracked.</p>
+    </Card>
+  );
 }
 
 // ─── Building blocks ──────────────────────────────────────────────────────────
@@ -755,6 +859,8 @@ export function GrowthDashboard({ load, weekly }: { load: MetricsLoader; weekly?
                 <p className="mt-2 text-xs text-gray-500">From the ad click id and UTM tags saved with each order.</p>
               </Card>
             </div>
+
+            {meta?.ok && meta.formats && <ReelsVsImagesCard formats={meta.formats} ads={meta.ads ?? []} />}
 
             {weekly && <WeeklyEmailCard api={weekly} />}
 

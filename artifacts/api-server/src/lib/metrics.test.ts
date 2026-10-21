@@ -11,6 +11,8 @@ import {
   labelState,
   withCreditedSales,
   parseMetaInsights,
+  parseMetaAds,
+  adFormat,
   parseRange,
   purchasesFrom,
   ratio,
@@ -215,6 +217,51 @@ test("parseMetaInsights lists a just-launched campaign at $0, after running ones
     ["4", "Starting"],
     ["1", "Ended"],
   ]);
+});
+
+test("adFormat: a video id, VIDEO type or feed videos is video, anything else is image", () => {
+  assert.equal(adFormat({ video_id: "v1" }), "video");
+  assert.equal(adFormat({ object_type: "VIDEO" }), "video");
+  assert.equal(adFormat({ asset_feed_spec: { videos: [{}] } }), "video");
+  assert.equal(adFormat({ object_type: "PHOTO" }), "image");
+  assert.equal(adFormat(undefined), "image");
+});
+
+test("parseMetaAds compares videos to images only in campaigns running a video", () => {
+  const { ads, formats } = parseMetaAds(
+    {
+      data: [
+        { ad_id: "r1", spend: "10.10", impressions: "400", inline_link_clicks: "24" },
+        { ad_id: "r2", spend: "8.30", impressions: "332", inline_link_clicks: "17", actions: [{ action_type: "purchase", value: "1" }] },
+        { ad_id: "i1", spend: "48.20", impressions: "2000", inline_link_clicks: "80" },
+        { ad_id: "i2", spend: "0", impressions: "0" }, // no delivery: dropped
+        { ad_id: "old", spend: "133.88", impressions: "3000", inline_link_clicks: "150" }, // image-only campaign: dropped
+      ],
+    },
+    {
+      data: [
+        { id: "i1", name: "Img 5", campaign_id: "c1", effective_status: "PAUSED", creative: { object_type: "PHOTO" } },
+        { id: "r1", name: "Reel - Counter", campaign_id: "c1", effective_status: "ACTIVE", creative: { video_id: "v1" } },
+        { id: "r2", name: "Reel - Explosion", campaign_id: "c1", effective_status: "ACTIVE", creative: { object_type: "VIDEO" } },
+        { id: "i2", name: "Img 3", campaign_id: "c1", creative: {} },
+        { id: "old", name: "TMNT", campaign_id: "c0", creative: {} },
+      ],
+    },
+  );
+  assert.deepEqual(ads.map((a) => [a.id, a.format]), [["r1", "video"], ["r2", "video"], ["i1", "image"]]);
+  assert.deepEqual(formats!.video, {
+    ads: 2, spendCents: 1840, impressions: 732, linkClicks: 41, purchases: 1, ctr: (41 / 732) * 100, costPerClickCents: 45,
+  });
+  assert.equal(formats!.image.ctr, 4);
+  assert.equal(formats!.image.costPerClickCents, 60);
+});
+
+test("parseMetaAds returns no comparison when nothing ran a video", () => {
+  const r = parseMetaAds(
+    { data: [{ ad_id: "i1", spend: "5", impressions: "100", inline_link_clicks: "3" }] },
+    { data: [{ id: "i1", name: "Img", campaign_id: "c1", creative: { object_type: "PHOTO" } }] },
+  );
+  assert.deepEqual(r, { ads: [], formats: null });
 });
 
 test("feesByCharge counts card and Cash App Pay fees, ignores refunds and payouts", () => {
