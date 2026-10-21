@@ -104,9 +104,22 @@ export function costPerSale(a: CheckAdSet): number | null {
   return a.lifetimeSales > 0 ? Math.round(a.lifetimeSpendCents / a.lifetimeSales) : null;
 }
 
-export function adSetVerdict(a: CheckAdSet, targetCents: number): Verdict {
+const isReel = (ad: { name: string }) => /^reel\b/i.test(ad.name);
+
+/** An on Reel in this ad set that hasn't had its own $80 yet, so the set's old image spend can't end the test. */
+function reelStillTesting(a: CheckAdSet, ads: CheckAd[]): boolean {
+  return ads.some(
+    (ad) => ad.adSetName === a.name && isOn(ad) && isReel(ad) && ad.spend7dCents < PAUSE_SPEND_WITHOUT_SALES_CENTS,
+  );
+}
+
+export function adSetVerdict(a: CheckAdSet, targetCents: number, ads: CheckAd[] = []): Verdict {
   const cps = costPerSale(a);
-  if (a.lifetimeSales === 0 && a.lifetimeSpendCents >= PAUSE_SPEND_WITHOUT_SALES_CENTS) {
+  if (a.lifetimeSales === 0 && reelStillTesting(a, ads)) {
+    return { label: "Reel test", tone: "neutral", action: null };
+  }
+  // Only a set that's still spending is worth pausing; lifetime spend alone flags ones already done.
+  if (a.lifetimeSales === 0 && a.spend7dCents > 0 && a.lifetimeSpendCents >= PAUSE_SPEND_WITHOUT_SALES_CENTS) {
     return { label: "Pause", tone: "bad", action: `Pause ${a.name}: ${money(a.lifetimeSpendCents)} spent with no sales.` };
   }
   if (isOn(a) && a.impressions7d === 0) {
@@ -159,11 +172,11 @@ export function checkActions(d: CheckData): string[] {
   const notDelivering =
     d.kind === "day_one"
       ? d.ads
-          .filter((ad) => isOn(ad) && ad.spend7dCents === 0 && /^reel\b/i.test(ad.name))
+          .filter((ad) => isOn(ad) && ad.spend7dCents === 0 && isReel(ad))
           .map((ad) => `${ad.name} hasn't spent yet. Check it cleared review.`)
       : [];
   const adSetActions = reportedAdSets(d.adSets)
-    .map((a) => adSetVerdict(a, d.targetCostPerSaleCents).action)
+    .map((a) => adSetVerdict(a, d.targetCostPerSaleCents, d.ads).action)
     .filter((a): a is string => a != null);
   const review =
     d.kind === "review"
@@ -193,7 +206,9 @@ export function buildCheckEmail(d: CheckData): { subject: string; html: string; 
   const spent = adSets.reduce((n, a) => n + a.lifetimeSpendCents, 0);
   const sold = adSets.reduce((n, a) => n + a.lifetimeSales, 0);
   const summary = `${money(spent)} spent so far for ${sales(sold)}${sold ? ` (${money(Math.round(spent / sold))} each)` : ""}.`;
-  const rules = `Rules: pause at ${money(PAUSE_SPEND_WITHOUT_SALES_CENTS)} with no sales, keep under ${money(
+  const rules = `Rules: pause at ${money(PAUSE_SPEND_WITHOUT_SALES_CENTS)} with no sales (a new Reel gets its own ${money(
+    PAUSE_SPEND_WITHOUT_SALES_CENTS,
+  )} first), keep under ${money(
     d.targetCostPerSaleCents,
   )} a sale, new ad when people have seen it more than ${TIRED_FREQUENCY} times.`;
   const missed = "Meta counts pixel and server purchases. A sale it missed is in Stripe and on the dashboard.";
@@ -205,7 +220,7 @@ export function buildCheckEmail(d: CheckData): { subject: string; html: string; 
   const label = (s: string) => `<div style="font-size:10px;letter-spacing:.14em;color:#6b7280;font-weight:700;margin-bottom:8px">${s}</div>`;
 
   const adSetRow = (a: CheckAdSet) => {
-    const v = adSetVerdict(a, d.targetCostPerSaleCents);
+    const v = adSetVerdict(a, d.targetCostPerSaleCents, d.ads);
     return (
       `<tr>` +
       `<td style="${td}">${esc(a.name)}${off(a)}</td>` +
@@ -278,7 +293,7 @@ export function buildCheckEmail(d: CheckData): { subject: string; html: string; 
       (a) =>
         `- ${a.name}${isOn(a) ? "" : " (off)"}: ${optMoney(a.dailyBudgetCents)}/day, ${money(a.spend7dCents)} spent in 7 days, ${sales(
           a.lifetimeSales,
-        )}, ${optMoney(costPerSale(a))} per sale, ${adSetVerdict(a, d.targetCostPerSaleCents).label}`,
+        )}, ${optMoney(costPerSale(a))} per sale, ${adSetVerdict(a, d.targetCostPerSaleCents, d.ads).label}`,
     ),
     ...(ads.length
       ? [``, `Ads (last 7 days):`, ...ads.map((a) => `- ${a.name}${isOn(a) ? "" : " (off)"}: ${money(a.spend7dCents)}, ${pct(a.ctr7d)} click rate, ${sales(a.sales7d)}`)]
