@@ -10,6 +10,7 @@ import {
   feesByCharge,
   labelState,
   parseMetaInsights,
+  parseMetaAds,
   type MetaSummary,
   type OrderExtras,
   type PaidOrder,
@@ -104,10 +105,12 @@ export async function loadMeta(range: Range, days: string[]): Promise<MetaSummar
     ? { time_range: JSON.stringify({ since: dayKey(range.start), until: dayKey(range.end) }) }
     : { date_preset: "maximum" };
 
-  const [byCampaign, byDay, list] = await Promise.all([
+  const [byCampaign, byDay, list, byAd, ads] = await Promise.all([
     graph<any>(`${account}/insights`, { level: "campaign", fields: "campaign_id,campaign_name,spend,ctr,actions", limit: "100", ...when }, token),
     graph<any>(`${account}/insights`, { fields: "spend", time_increment: "1", limit: "500", ...when }, token),
     graph<any>(`${account}/campaigns`, { fields: "name,effective_status,stop_time,adsets.limit(50){end_time}", limit: "100" }, token),
+    graph<any>(`${account}/insights`, { level: "ad", fields: "ad_id,spend,impressions,inline_link_clicks,actions", limit: "200", ...when }, token),
+    graph<any>(`${account}/ads`, { fields: "name,campaign_id,effective_status,creative{object_type,video_id,asset_feed_spec{videos}}", limit: "200" }, token),
   ]);
-  return parseMetaInsights(byCampaign, byDay, list, days);
+  return { ...parseMetaInsights(byCampaign, byDay, list, days), ...parseMetaAds(byAd, ads) };
 }
