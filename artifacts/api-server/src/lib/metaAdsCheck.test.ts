@@ -82,6 +82,16 @@ test("adSetVerdict: pause, not spending, tired, over target, keep, too early", (
   assert.equal(adSetVerdict(adSet(), TARGET).label, "Too early");
 });
 
+test("adSetVerdict: a new Reel holds off the pause, a set that stopped spending isn't paused", () => {
+  const spent = adSet({ lifetimeSpendCents: 12757, spend7dCents: 11877 });
+  assert.equal(adSetVerdict(spent, TARGET, [ad({ spend7dCents: 1612 })]).label, "Reel test");
+  assert.equal(adSetVerdict(spent, TARGET, [ad({ spend7dCents: 8100 })]).label, "Pause");
+  assert.equal(adSetVerdict(spent, TARGET, [ad({ status: "PAUSED" })]).label, "Pause");
+  assert.equal(adSetVerdict(spent, TARGET, [ad({ adSetName: "Retargeting - Visitors 30d - Purchase - $5" })]).label, "Pause");
+  const done = adSet({ name: "US 18+ Broad - Purchase", lifetimeSpendCents: 13388, spend7dCents: 0, impressions7d: 0 });
+  assert.notEqual(adSetVerdict(done, TARGET).label, "Pause");
+});
+
 test("reportedAdSets and reportedAds: finished campaigns drop out, flagged ads stay", () => {
   const done = adSet({ name: "US 18+ Broad - Purchase", status: "CAMPAIGN_PAUSED", spend7dCents: 0, lifetimeSpendCents: 13388 });
   assert.deepEqual(reportedAdSets([adSet(), done]).map((a) => a.name), [adSet().name]);
@@ -95,13 +105,16 @@ test("reportedAdSets and reportedAds: finished campaigns drop out, flagged ads s
 test("checkActions: rejected ads, Reels not spending on day 1, ad set calls", () => {
   const d = data({
     kind: "day_one",
-    adSets: [adSet({ lifetimeSpendCents: 9182 })],
+    adSets: [
+      adSet({ lifetimeSpendCents: 9182 }),
+      adSet({ name: "Retargeting - Visitors 30d - Purchase - $5", lifetimeSpendCents: 9182 }),
+    ],
     ads: [ad({ spend7dCents: 0 }), ad({ name: "Reel - Explosion", status: "DISAPPROVED", reviewFeedback: "Personal attributes" })],
   });
   assert.deepEqual(checkActions(d), [
     'Ad "Reel - Explosion" in Prospecting - US 18+ Broad - Purchase - $20 is rejected: Personal attributes. Fix it or replace it.',
     "Reel - Counter hasn't spent yet. Check it cleared review.",
-    "Pause Prospecting - US 18+ Broad - Purchase - $20: $91.82 spent with no sales.",
+    "Pause Retargeting - Visitors 30d - Purchase - $5: $91.82 spent with no sales.",
   ]);
   assert.deepEqual(checkActions(data()), []);
   assert.equal(checkActions(data({ kind: "review" })).length, 1);
