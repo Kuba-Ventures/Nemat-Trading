@@ -2,6 +2,7 @@ import app from "./app";
 import { pool } from "@workspace/db";
 import { startWeeklySnapshotScheduler } from "./lib/weeklySnapshotJob";
 import { startMetaAdsCheckScheduler } from "./lib/metaAdsCheckJob";
+import { startAiHealthScheduler } from "./lib/aiHealthJob";
 
 const rawPort = process.env["PORT"];
 
@@ -95,6 +96,21 @@ async function migrate() {
       sent_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
+    -- One row per AI service per 10 minute health check (src/lib/aiHealthJob.ts).
+    -- alert_sent marks the check that sent a down or recovered email.
+    CREATE TABLE IF NOT EXISTS ai_service_checks (
+      id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
+      service TEXT NOT NULL,
+      checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
+      status TEXT NOT NULL CHECK (status IN ('working', 'down', 'unknown')),
+      failure_kind TEXT,
+      failure_detail TEXT,
+      latency_ms INTEGER,
+      alert_sent TEXT CHECK (alert_sent IN ('down', 'recovered'))
+    );
+    CREATE INDEX IF NOT EXISTS ai_service_checks_service_checked_at_idx
+      ON ai_service_checks (service, checked_at DESC);
+
     -- Lock these tables down from Supabase's public Data API (anon key).
     -- We connect as the postgres role, which bypasses RLS, so the app is
     -- unaffected. With RLS on and no policies, the Data API returns nothing.
@@ -102,6 +118,7 @@ async function migrate() {
     ALTER TABLE orders      ENABLE ROW LEVEL SECURITY;
     ALTER TABLE subscribers ENABLE ROW LEVEL SECURITY;
     ALTER TABLE weekly_snapshots ENABLE ROW LEVEL SECURITY;
+    ALTER TABLE ai_service_checks ENABLE ROW LEVEL SECURITY;
   `);
 
   // Seed the default product if the table is empty
@@ -132,6 +149,7 @@ migrate()
       console.log(`Server listening on port ${port}`);
       startWeeklySnapshotScheduler();
       startMetaAdsCheckScheduler();
+      startAiHealthScheduler();
     });
   })
   .catch((err) => {
