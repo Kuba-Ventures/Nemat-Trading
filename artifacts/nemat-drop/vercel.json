@@ -6,5 +6,11 @@
       "source": "/((?!api/).*)",
       "destination": "/index.html"
     }
+  ],
+  "crons": [
+    {
+      "path": "/api/cron/watch-railway",
+      "schedule": "*/10 * * * *"
+    }
   ]
 }

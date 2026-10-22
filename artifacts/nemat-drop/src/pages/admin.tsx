@@ -1,7 +1,8 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
 import { FinanceDashboard, GrowthDashboard, type Metrics, type WeeklyEmailApi } from "./adminDashboards";
-import { AiHealthDownBanner, HealthView, useAiHealth, type AiHealthReport } from "./adminHealth";
+import { ApiUnreachableError, HealthDownBanner, HealthListView, HealthMapView, useDependencyHealth } from "./adminHealth";
+import type { HealthReport } from "@/lib/dependencyHealth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -70,11 +71,12 @@ type Product = {
   createdAt: string;
 };
 
-type View = "list" | "new" | "edit" | "waitlist" | "orders" | "finance" | "growth" | "health";
+type View = "list" | "new" | "edit" | "waitlist" | "orders" | "finance" | "growth" | "health" | "health-map";
 
-// The AI health alert emails link to /admin?view=health.
+// The health emails link to /admin?view=health; /admin?view=health-map opens the map.
 function initialView(): View {
-  return new URLSearchParams(window.location.search).get("view") === "health" ? "health" : "list";
+  const requested = new URLSearchParams(window.location.search).get("view");
+  return requested === "health" || requested === "health-map" ? requested : "list";
 }
 
 type AdminOrder = {
@@ -115,7 +117,7 @@ function StatusBadge({ product }: { product: Product }) {
 const NAV_GROUPS: { label: string; items: { key: View; label: string }[] }[] = [
   { label: "Insights", items: [{ key: "finance", label: "Finance" }, { key: "growth", label: "Growth" }] },
   { label: "Store", items: [{ key: "list", label: "Products" }, { key: "orders", label: "Orders" }, { key: "waitlist", label: "Waitlist" }] },
-  { label: "System", items: [{ key: "health", label: "Health" }] },
+  { label: "System", items: [{ key: "health", label: "Health" }, { key: "health-map", label: "Map" }] },
 ];
 
 function DownBadge({ count }: { count: number }) {
@@ -1487,13 +1489,20 @@ export default function AdminPage() {
     },
   }), []);
 
-  const loadAiHealth = useCallback(async (): Promise<AiHealthReport> => {
-    const res = await adminFetch(`${API_URL}/api/admin/ai-health`);
-    const body = await res.json().catch(() => ({}));
-    if (!res.ok) throw new Error(body.error ?? `API returned ${res.status}`);
+  const loadHealth = useCallback(async (): Promise<HealthReport> => {
+    let res: Response;
+    try {
+      res = await adminFetch(`${API_URL}/api/admin/dependency-health`);
+    } catch {
+      throw new ApiUnreachableError("The API didn't answer");
+    }
+    const body = await res.json().catch(() => null);
+    // Railway's proxy answers 502/503/504 with no JSON when the service is down.
+    if (!body && res.status >= 502 && res.status <= 504) throw new ApiUnreachableError(`The API returned ${res.status}`);
+    if (!res.ok) throw new Error(body?.error ?? `API returned ${res.status}`);
     return body;
   }, []);
-  const aiHealth = useAiHealth(loadAiHealth, !!adminKey);
+  const health = useDependencyHealth(loadHealth, !!adminKey);
 
   // Any 401 from an admin call (expired or rotated token) returns to the login.
   useEffect(() => {
@@ -1550,10 +1559,10 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-black text-white md:flex">
-      <AdminNav active={view} onNavigate={setView} servicesDownCount={aiHealth.report?.downCount ?? 0} />
+      <AdminNav active={view} onNavigate={setView} servicesDownCount={health.model.badgeCount} />
       <div className="min-w-0 flex-1 px-4 py-8 md:px-8 md:py-10">
       <div className={`mx-auto ${view === "finance" || view === "growth" ? "max-w-6xl" : "max-w-4xl"}`}>
-        {view !== "health" && <AiHealthDownBanner report={aiHealth.report} onOpen={() => setView("health")} />}
+        {view !== "health" && view !== "health-map" && <HealthDownBanner model={health.model} onOpen={() => setView("health")} />}
         {view === "list" && (
           <ProductList
             adminKey={adminKey}
@@ -1573,7 +1582,8 @@ export default function AdminPage() {
         {view === "orders" && <OrderList adminKey={adminKey} />}
         {view === "finance" && <FinanceDashboard load={loadMetrics} />}
         {view === "growth" && <GrowthDashboard load={loadMetrics} weekly={weeklyEmail} />}
-        {view === "health" && <HealthView report={aiHealth.report} error={aiHealth.error} onRefresh={aiHealth.refresh} />}
+        {view === "health" && <HealthListView model={health.model} report={health.report} error={health.error} onRefresh={health.refresh} />}
+        {view === "health-map" && <HealthMapView model={health.model} error={health.error} onRefresh={health.refresh} />}
       </div>
       </div>
     </main>

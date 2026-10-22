@@ -2,7 +2,7 @@ import app from "./app";
 import { pool } from "@workspace/db";
 import { startWeeklySnapshotScheduler } from "./lib/weeklySnapshotJob";
 import { startMetaAdsCheckScheduler } from "./lib/metaAdsCheckJob";
-import { startAiHealthScheduler } from "./lib/aiHealthJob";
+import { startDependencyHealthScheduler } from "./lib/dependencyHealthJob";
 
 const rawPort = process.env["PORT"];
 
@@ -96,18 +96,28 @@ async function migrate() {
       sent_at TIMESTAMP NOT NULL DEFAULT NOW()
     );
 
-    -- One row per AI service per 10 minute health check (src/lib/aiHealthJob.ts).
-    -- alert_sent marks the check that sent a down or recovered email.
+    -- One row per dependency per 10 minute health check (src/lib/dependencyHealthJob.ts),
+    -- the outside watcher's "api" rows, and one "sheets_webhook_call" row per real
+    -- Sheets webhook call. alert_sent marks the rows covered by that day's email.
     CREATE TABLE IF NOT EXISTS ai_service_checks (
       id BIGINT GENERATED ALWAYS AS IDENTITY PRIMARY KEY,
       service TEXT NOT NULL,
       checked_at TIMESTAMPTZ NOT NULL DEFAULT NOW(),
-      status TEXT NOT NULL CHECK (status IN ('working', 'down', 'unknown')),
+      status TEXT NOT NULL,
       failure_kind TEXT,
       failure_detail TEXT,
       latency_ms INTEGER,
-      alert_sent TEXT CHECK (alert_sent IN ('down', 'recovered'))
+      alert_sent TEXT
     );
+    ALTER TABLE ai_service_checks ADD COLUMN IF NOT EXISTS limit_remaining NUMERIC;
+    ALTER TABLE ai_service_checks ADD COLUMN IF NOT EXISTS limit_unit TEXT;
+    ALTER TABLE ai_service_checks ADD COLUMN IF NOT EXISTS note TEXT;
+    ALTER TABLE ai_service_checks DROP CONSTRAINT IF EXISTS ai_service_checks_status_check;
+    ALTER TABLE ai_service_checks ADD CONSTRAINT ai_service_checks_status_check
+      CHECK (status IN ('working', 'warning', 'down', 'unknown'));
+    ALTER TABLE ai_service_checks DROP CONSTRAINT IF EXISTS ai_service_checks_alert_sent_check;
+    ALTER TABLE ai_service_checks ADD CONSTRAINT ai_service_checks_alert_sent_check
+      CHECK (alert_sent IN ('down', 'recovered', 'running_low'));
     CREATE INDEX IF NOT EXISTS ai_service_checks_service_checked_at_idx
       ON ai_service_checks (service, checked_at DESC);
 
@@ -149,7 +159,7 @@ migrate()
       console.log(`Server listening on port ${port}`);
       startWeeklySnapshotScheduler();
       startMetaAdsCheckScheduler();
-      startAiHealthScheduler();
+      startDependencyHealthScheduler();
     });
   })
   .catch((err) => {
