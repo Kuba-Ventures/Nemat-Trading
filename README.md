@@ -92,6 +92,7 @@ Set these in the Railway service's "Variables" panel.
 | `API_BASE_URL` | Optional | Base URL prepended to uploaded image paths returned by `POST /api/admin/upload`. If unset, paths are returned relative (e.g. `/uploads/filename.jpg`). Only matters if you serve uploads from a CDN. | Your Railway service's public URL |
 | `ANTHROPIC_API_KEY` | Optional | Used by the card-intel endpoint in `scryfall.ts` to call Claude. Returns 503 if not set. | [console.anthropic.com](https://console.anthropic.com) |
 | `REMOVE_BG_API_KEY` | Optional | Used by the background-removal endpoint in `scryfall.ts`. Returns 503 if not set. | [remove.bg/api](https://www.remove.bg/api) |
+| `AI_HEALTH_ALERT_TO` | Optional | Comma-separated team addresses (qsbsrollover.com only) for the AI health down and recovered emails. Defaults to `finley@qsbsrollover.com`. Sent with `RESEND_API_KEY` from `ORDER_EMAIL_FROM`. | Team addresses |
 
 ---
 
@@ -158,6 +159,17 @@ Everything here except `/api/tcgplayer/price` requires the `x-admin-key: <ADMIN_
 | `GET` | `/api/admin/subscribers` | Lists all waitlist subscribers. |
 | `POST` | `/api/admin/sync-sheets` | Backfills all subscribers and orders to the Google Sheet. Clear existing data rows in the sheet before running to avoid duplicates. |
 | `POST` | `/api/admin/upload` | Accepts a multipart image upload (max 10 MB) and saves it to `uploads/` on the server. Returns `{ url }`. |
+| `GET` | `/api/admin/ai-health` | AI health report for the admin Health view: per service status, last check, reply time, 7 day timeline, uptime and incidents, plus `downCount` for the red banner and nav badge. |
+
+### AI health checks
+
+The API checks every AI service it calls at runtime every 10 minutes, with the real keys, and emails the team when one goes down and again when it recovers. This exists because Anthropic has no API for remaining prepaid credit, so running out is only visible to a live request.
+
+- **What is checked:** Claude (`ANTHROPIC_API_KEY`, one `max_tokens: 1` request to `claude-haiku-5-5`) and remove.bg (`REMOVE_BG_API_KEY`, the free `GET /v1.0/account` balance read; under one credit counts as out of credits, since the shop requests size `auto`).
+- **Scheduler:** in process, like the scorecard and Meta ads check (`startAiHealthScheduler` in `src/lib/aiHealthJob.ts`), first run a minute after boot. Off when `NODE_ENV=development`.
+- **Storage:** one row per service per check in `ai_service_checks` (created by the bootstrap in `src/index.ts`, RLS on).
+- **Alerts:** out of credit or a rejected key alerts on the first failed check; outages, rate limits and network errors wait for a second failed check. One down email and one recovered email per incident, linking to `/admin?view=health`.
+- **Files:** `src/lib/aiHealthChecks.ts` (live checks and failure classification), `src/lib/aiHealthAlerts.ts` (alert decision and email), `src/lib/aiHealthSummary.ts` (timeline, uptime, incidents), `src/lib/aiHealthJob.ts` (storage, send, scheduler), `src/routes/aiHealth.ts`, and the front end's `src/pages/adminHealth.tsx`.
 
 ---
 

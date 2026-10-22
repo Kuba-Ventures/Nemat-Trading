@@ -1,6 +1,7 @@
 import { useState, useEffect, useRef, useCallback, useMemo } from "react";
 import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
 import { FinanceDashboard, GrowthDashboard, type Metrics, type WeeklyEmailApi } from "./adminDashboards";
+import { AiHealthDownBanner, HealthView, useAiHealth, type AiHealthReport } from "./adminHealth";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -69,7 +70,12 @@ type Product = {
   createdAt: string;
 };
 
-type View = "list" | "new" | "edit" | "waitlist" | "orders" | "finance" | "growth";
+type View = "list" | "new" | "edit" | "waitlist" | "orders" | "finance" | "growth" | "health";
+
+// The AI health alert emails link to /admin?view=health.
+function initialView(): View {
+  return new URLSearchParams(window.location.search).get("view") === "health" ? "health" : "list";
+}
 
 type AdminOrder = {
   id: number;
@@ -109,9 +115,19 @@ function StatusBadge({ product }: { product: Product }) {
 const NAV_GROUPS: { label: string; items: { key: View; label: string }[] }[] = [
   { label: "Insights", items: [{ key: "finance", label: "Finance" }, { key: "growth", label: "Growth" }] },
   { label: "Store", items: [{ key: "list", label: "Products" }, { key: "orders", label: "Orders" }, { key: "waitlist", label: "Waitlist" }] },
+  { label: "System", items: [{ key: "health", label: "Health" }] },
 ];
 
-function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) => void }) {
+function DownBadge({ count }: { count: number }) {
+  if (count <= 0) return null;
+  return (
+    <span className="ml-2 inline-flex h-[18px] min-w-[18px] items-center justify-center rounded-full bg-red-400 px-1.5 text-[11px] font-bold text-black" aria-label={`${count} down`}>
+      {count}
+    </span>
+  );
+}
+
+function AdminNav({ active, onNavigate, servicesDownCount }: { active: View; onNavigate: (v: View) => void; servicesDownCount: number }) {
   // The product form lives under Products.
   const current = active === "new" || active === "edit" ? "list" : active;
   return (
@@ -136,6 +152,7 @@ function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) 
                   }`}
                 >
                   {i.label}
+                  {i.key === "health" && <DownBadge count={servicesDownCount} />}
                 </button>
               ))}
             </div>
@@ -165,6 +182,7 @@ function AdminNav({ active, onNavigate }: { active: View; onNavigate: (v: View) 
                   }`}
                 >
                   {i.label}
+                  {i.key === "health" && <DownBadge count={servicesDownCount} />}
                 </button>
               ))}
             </div>
@@ -1441,7 +1459,7 @@ export default function AdminPage() {
   const [password, setPassword] = useState("");
   const [loginError, setLoginError] = useState<string | null>(null);
   const [loggingIn, setLoggingIn] = useState(false);
-  const [view, setView] = useState<View>("list");
+  const [view, setView] = useState<View>(initialView);
   const [editingProduct, setEditingProduct] = useState<Product | null>(null);
 
   const loadMetrics = useCallback(async (range: string, opts?: { fresh?: boolean }): Promise<Metrics> => {
@@ -1468,6 +1486,14 @@ export default function AdminPage() {
       if (!res.ok) throw new Error(body.error ?? `API returned ${res.status}`);
     },
   }), []);
+
+  const loadAiHealth = useCallback(async (): Promise<AiHealthReport> => {
+    const res = await adminFetch(`${API_URL}/api/admin/ai-health`);
+    const body = await res.json().catch(() => ({}));
+    if (!res.ok) throw new Error(body.error ?? `API returned ${res.status}`);
+    return body;
+  }, []);
+  const aiHealth = useAiHealth(loadAiHealth, !!adminKey);
 
   // Any 401 from an admin call (expired or rotated token) returns to the login.
   useEffect(() => {
@@ -1524,9 +1550,10 @@ export default function AdminPage() {
 
   return (
     <main className="min-h-screen bg-black text-white md:flex">
-      <AdminNav active={view} onNavigate={setView} />
+      <AdminNav active={view} onNavigate={setView} servicesDownCount={aiHealth.report?.downCount ?? 0} />
       <div className="min-w-0 flex-1 px-4 py-8 md:px-8 md:py-10">
       <div className={`mx-auto ${view === "finance" || view === "growth" ? "max-w-6xl" : "max-w-4xl"}`}>
+        {view !== "health" && <AiHealthDownBanner report={aiHealth.report} onOpen={() => setView("health")} />}
         {view === "list" && (
           <ProductList
             adminKey={adminKey}
@@ -1546,6 +1573,7 @@ export default function AdminPage() {
         {view === "orders" && <OrderList adminKey={adminKey} />}
         {view === "finance" && <FinanceDashboard load={loadMetrics} />}
         {view === "growth" && <GrowthDashboard load={loadMetrics} weekly={weeklyEmail} />}
+        {view === "health" && <HealthView report={aiHealth.report} error={aiHealth.error} onRefresh={aiHealth.refresh} />}
       </div>
       </div>
     </main>
