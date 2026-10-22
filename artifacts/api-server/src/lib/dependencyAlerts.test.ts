@@ -1,16 +1,15 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
 import {
-  anAlertEmailWentOutSince,
-  buildHealthDailyEmail,
-  dailyEmailSubject,
+  aDownEmailWentOutForThisServiceSince,
+  alertEmailSubject,
+  buildHealthAlertEmail,
   describeDowntime,
   downSinceForIncident,
   healthAlertRecipients,
   healthPageUrl,
   isOutageWorthReporting,
   isRecoveryAwaitingReport,
-  isRunningLowWorthReporting,
   reportedIncidentTimes,
   type StoredDependencyCheck,
 } from "./dependencyAlerts";
@@ -46,9 +45,30 @@ test("unknown and working checks are never outages", () => {
   assert.equal(isOutageWorthReporting({ status: "working", failureKind: null }, []), false);
 });
 
-test("running low goes into the email whenever the service is in warning", () => {
-  assert.equal(isRunningLowWorthReporting({ status: "warning" }), true);
-  assert.equal(isRunningLowWorthReporting({ status: "working" }), false);
+test("an outage already emailed gets no reminder while it lasts", () => {
+  assert.equal(
+    isOutageWorthReporting({ status: "down", failureKind: "key_rejected" }, [
+      storedCheck({ status: "down", failureKind: "key_rejected" }),
+      storedCheck({ status: "down", failureKind: "key_rejected", alertSent: "down", checkedAt: "2026-10-20T10:00:00.000Z" }),
+      storedCheck(),
+    ]),
+    false,
+  );
+});
+
+test("a new outage after a fix is reported again", () => {
+  assert.equal(
+    isOutageWorthReporting({ status: "down", failureKind: "key_rejected" }, [storedCheck(), storedCheck({ status: "down", alertSent: "down" })]),
+    true,
+  );
+});
+
+test("running low is never an email on its own, and it counts as fixed after a down", () => {
+  assert.equal(isOutageWorthReporting({ status: "warning", failureKind: "running_low" }, []), false);
+  assert.equal(
+    isRecoveryAwaitingReport({ status: "warning" }, [storedCheck({ status: "down", failureKind: "out_of_credits", alertSent: "down" })]),
+    true,
+  );
 });
 
 test("a recovery is reported only when the last email listed the outage", () => {
@@ -61,24 +81,28 @@ test("a recovery is reported only when the last email listed the outage", () => 
     isRecoveryAwaitingReport({ status: "working" }, [storedCheck({ alertSent: "recovered" }), storedCheck({ status: "down", alertSent: "down" })]),
     false,
   );
-  assert.equal(isRecoveryAwaitingReport({ status: "working" }, [storedCheck({ status: "warning", alertSent: "running_low" })]), false);
 });
 
-test("a recovery after today's email still waits for the next email", () => {
+test("a recovery's times run from the first failed check to the first working one", () => {
   const earlierNewestFirst = [
     storedCheck({ status: "working", checkedAt: "2026-10-22T18:00:00.000Z" }),
     storedCheck({ status: "down", checkedAt: "2026-10-22T17:50:00.000Z", alertSent: "down" }),
+    storedCheck({ status: "down", checkedAt: "2026-10-22T17:40:00.000Z" }),
   ];
-  assert.equal(isRecoveryAwaitingReport({ status: "working" }, earlierNewestFirst), true);
-  const times = reportedIncidentTimes(earlierNewestFirst, "2026-10-23T16:00:00.000Z");
-  assert.equal(times.recoveredAtIso, "2026-10-22T18:00:00.000Z");
+  assert.deepEqual(reportedIncidentTimes(earlierNewestFirst, "2026-10-22T18:10:00.000Z"), {
+    downSinceIso: "2026-10-22T17:40:00.000Z",
+    recoveredAtIso: "2026-10-22T18:00:00.000Z",
+  });
 });
 
-test("the daily limit counts any email sent since the start of the Pacific day", () => {
-  const checks = [storedCheck({ checkedAt: "2026-10-22T08:30:00.000Z", alertSent: "down" })];
-  assert.equal(anAlertEmailWentOutSince(checks, "2026-10-22T07:00:00.000Z"), true);
-  assert.equal(anAlertEmailWentOutSince(checks, "2026-10-23T07:00:00.000Z"), false);
-  assert.equal(anAlertEmailWentOutSince([], "2026-10-22T07:00:00.000Z"), false);
+test("a service that keeps flipping gets at most one down email per Pacific day", () => {
+  const checks = [
+    storedCheck({ checkedAt: "2026-10-22T09:00:00.000Z", alertSent: "recovered" }),
+    storedCheck({ status: "down", checkedAt: "2026-10-22T08:30:00.000Z", alertSent: "down" }),
+  ];
+  assert.equal(aDownEmailWentOutForThisServiceSince(checks, "2026-10-22T07:00:00.000Z"), true);
+  assert.equal(aDownEmailWentOutForThisServiceSince(checks, "2026-10-23T07:00:00.000Z"), false);
+  assert.equal(aDownEmailWentOutForThisServiceSince([storedCheck({ alertSent: "recovered" })], "2026-10-21T07:00:00.000Z"), false);
 });
 
 test("the incident starts at its oldest failed check", () => {
@@ -98,27 +122,35 @@ test("downtime reads in hours and minutes", () => {
   assert.equal(describeDowntime("2026-10-21T23:45:00.000Z", "2026-10-21T23:55:00.000Z"), "10 minutes");
 });
 
-test("one combined email lists outages, running low and recoveries, without dashes", () => {
-  const email = buildHealthDailyEmail({
+test("services that change in the same run share one email, without dashes", () => {
+  const email = buildHealthAlertEmail({
     outages: [{ service: "stripe", failureKind: "key_rejected", failureDetail: "401: Invalid API Key", downSinceIso: "2026-10-21T23:45:00.000Z" }],
-    runningLow: [{ service: "removebg", failureDetail: "12 credits, about 4 days left at this week's pace" }],
     recoveries: [{ service: "shippo", downSinceIso: "2026-10-21T20:00:00.000Z", recoveredAtIso: "2026-10-21T21:00:00.000Z" }],
     healthPageUrl: "https://tommytopdecker.com/admin?view=health",
   });
   assert.equal(email.subject, "Tommy Top Decker: Stripe is down, the key was rejected");
   assert.match(email.text, /customers can't pay at checkout/);
-  assert.match(email.text, /remove\.bg is running low: 12 credits/);
   assert.match(email.text, /Shippo is working again/);
-  assert.match(email.text, /at most one of these emails a day/);
+  assert.match(email.text, /only get an email when something goes down and another when it is fixed/);
+  assert.doesNotMatch(email.text, /running low:/);
   assert.match(email.html, /admin\?view=health/);
   assert.doesNotMatch(email.text + email.subject, /\u2014|\u2013/);
 });
 
-test("the subject leads with the worst news", () => {
-  assert.equal(dailyEmailSubject({ outages: [], runningLow: [{ service: "removebg", failureDetail: null }], recoveries: [] }), "Tommy Top Decker: remove.bg is running low");
+test("the subject leads with what went down, then what was fixed", () => {
   assert.equal(
-    dailyEmailSubject({ outages: [], runningLow: [], recoveries: [{ service: "claude", downSinceIso: "x", recoveredAtIso: "x" }] }),
+    alertEmailSubject({ outages: [], recoveries: [{ service: "claude", downSinceIso: "x", recoveredAtIso: "x" }] }),
     "Tommy Top Decker: Claude is working again",
+  );
+  assert.equal(
+    alertEmailSubject({
+      outages: [
+        { service: "stripe", failureKind: "key_rejected", failureDetail: null, downSinceIso: "x" },
+        { service: "db", failureKind: "unreachable", failureDetail: null, downSinceIso: "x" },
+      ],
+      recoveries: [],
+    }),
+    "Tommy Top Decker: 2 services are down",
   );
 });
 

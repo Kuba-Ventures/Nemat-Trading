@@ -1,11 +1,12 @@
-// Pure alert logic for the dependency health checks: what goes in the daily email
-// and what it says. No I/O here, so it is all unit tested.
+// Pure alert logic for the dependency health checks: when to email and what the
+// email says. No I/O here, so it is all unit tested.
 //
-// At most one health email per Pacific day, across every dependency (copied from
-// Telly, voice-agent PR #189). It lists everything down now, everything running
-// low, and anything that recovered since the last email. An outage still going
-// the next day is mentioned again then; a recovery after that day's email waits
-// for the next one. Failures that never fix themselves (out of credit, a rejected
+// Email only when something goes down and when it is fixed (copied from Telly,
+// voice-agent PR #190). No reminders while an outage lasts, never an "all good"
+// email, and no "running low" email: running low shows on the Health page only,
+// and a limit that actually runs out is a down. Services that change in the same
+// run share one email. A service that keeps flipping gets at most one down email
+// per Pacific day. Failures that never fix themselves (out of credit, a rejected
 // key) count from the first failed check; transient ones (outage, rate limit,
 // network) need a second failed check in a row, so a blip doesn't page anyone.
 
@@ -13,7 +14,7 @@ import { BUSINESS_TZ, isInternalEmail } from "./metrics";
 import { esc } from "./weeklySnapshot";
 import type { DependencyCheckResult, DependencyFailureKind, DependencyKey, DependencyStatus } from "./dependencyChecks";
 
-export type DependencyAlertKind = "down" | "recovered" | "running_low";
+export type DependencyAlertKind = "down" | "recovered";
 
 export type StoredDependencyCheck = {
   service: DependencyKey;
@@ -129,8 +130,11 @@ export const dependencyFailureSummaries: Record<DependencyFailureKind, string> =
   no_recent_activity: "nothing has used it recently",
 };
 
+// Running low still works, so it ends an outage just like working does.
+const isUp = (status: DependencyStatus) => status === "working" || status === "warning";
+
 function checksInTheCurrentIncident(earlierChecksNewestFirst: StoredDependencyCheck[]): StoredDependencyCheck[] {
-  const indexOfMostRecentWorkingCheck = earlierChecksNewestFirst.findIndex((check) => check.status === "working");
+  const indexOfMostRecentWorkingCheck = earlierChecksNewestFirst.findIndex((check) => isUp(check.status));
   return indexOfMostRecentWorkingCheck === -1
     ? earlierChecksNewestFirst
     : earlierChecksNewestFirst.slice(0, indexOfMostRecentWorkingCheck);
@@ -141,14 +145,14 @@ export function isOutageWorthReporting(
   earlierChecksNewestFirst: StoredDependencyCheck[],
 ): boolean {
   if (newCheck.status !== "down") return false;
+  const outageWasAlreadyReported = checksInTheCurrentIncident(earlierChecksNewestFirst).some(
+    (check) => check.alertSent === "down",
+  );
+  if (outageWasAlreadyReported) return false;
   const failureNeverFixesItself =
     newCheck.failureKind !== null && failureKindsThatNeverFixThemselves.includes(newCheck.failureKind);
   const previousCheckWasAlsoDown = earlierChecksNewestFirst[0]?.status === "down";
   return failureNeverFixesItself || previousCheckWasAlsoDown;
-}
-
-export function isRunningLowWorthReporting(newCheck: Pick<DependencyCheckResult, "status">): boolean {
-  return newCheck.status === "warning";
 }
 
 function indexOfMostRecentlyReportedCheck(earlierChecksNewestFirst: StoredDependencyCheck[]): number {
@@ -159,7 +163,7 @@ export function isRecoveryAwaitingReport(
   newCheck: Pick<DependencyCheckResult, "status">,
   earlierChecksNewestFirst: StoredDependencyCheck[],
 ): boolean {
-  if (newCheck.status !== "working") return false;
+  if (!isUp(newCheck.status)) return false;
   const reportedCheckIndex = indexOfMostRecentlyReportedCheck(earlierChecksNewestFirst);
   return reportedCheckIndex !== -1 && earlierChecksNewestFirst[reportedCheckIndex].alertSent === "down";
 }
@@ -183,7 +187,7 @@ export function reportedIncidentTimes(
 
   let firstWorkingAfterIndex = -1;
   for (let checkIndex = reportedCheckIndex - 1; checkIndex >= 0; checkIndex -= 1) {
-    if (earlierChecksNewestFirst[checkIndex].status === "working") {
+    if (isUp(earlierChecksNewestFirst[checkIndex].status)) {
       firstWorkingAfterIndex = checkIndex;
       break;
     }
@@ -196,12 +200,12 @@ export function reportedIncidentTimes(
   };
 }
 
-export function anAlertEmailWentOutSince(
-  recentChecks: Pick<StoredDependencyCheck, "checkedAt" | "alertSent">[],
+export function aDownEmailWentOutForThisServiceSince(
+  earlierChecksNewestFirst: Pick<StoredDependencyCheck, "checkedAt" | "alertSent">[],
   sinceInstantIso: string,
 ): boolean {
   const sinceMilliseconds = Date.parse(sinceInstantIso);
-  return recentChecks.some((check) => check.alertSent !== null && Date.parse(check.checkedAt) >= sinceMilliseconds);
+  return earlierChecksNewestFirst.some((check) => check.alertSent === "down" && Date.parse(check.checkedAt) >= sinceMilliseconds);
 }
 
 export function formatPacificTime(instantIso: string): string {
@@ -230,13 +234,10 @@ export type DependencyOutageForEmail = {
   downSinceIso: string;
 };
 
-export type DependencyRunningLowForEmail = { service: DependencyKey; failureDetail: string | null };
-
 export type DependencyRecoveryForEmail = { service: DependencyKey; downSinceIso: string; recoveredAtIso: string };
 
-export type HealthDailyEmailInput = {
+export type HealthAlertEmailInput = {
   outages: DependencyOutageForEmail[];
-  runningLow: DependencyRunningLowForEmail[];
   recoveries: DependencyRecoveryForEmail[];
   healthPageUrl: string;
 };
@@ -245,16 +246,12 @@ export type HealthEmail = { subject: string; text: string; html: string };
 
 const brand = "Tommy Top Decker";
 
-export function dailyEmailSubject(emailInput: Pick<HealthDailyEmailInput, "outages" | "runningLow" | "recoveries">): string {
+export function alertEmailSubject(emailInput: Pick<HealthAlertEmailInput, "outages" | "recoveries">): string {
   if (emailInput.outages.length === 1) {
     const outage = emailInput.outages[0];
     return `${brand}: ${dependencyDisplayNames[outage.service]} is down, ${dependencyFailureSummaries[outage.failureKind ?? "unexpected_response"]}`;
   }
   if (emailInput.outages.length > 1) return `${brand}: ${emailInput.outages.length} services are down`;
-  if (emailInput.runningLow.length === 1) {
-    return `${brand}: ${dependencyDisplayNames[emailInput.runningLow[0].service]} is running low`;
-  }
-  if (emailInput.runningLow.length > 1) return `${brand}: ${emailInput.runningLow.length} services are running low`;
   if (emailInput.recoveries.length === 1) {
     return `${brand}: ${dependencyDisplayNames[emailInput.recoveries[0].service]} is working again`;
   }
@@ -272,31 +269,22 @@ function outageParagraphs(outage: DependencyOutageForEmail): string[] {
   return paragraphs;
 }
 
-function runningLowParagraphs(runningLow: DependencyRunningLowForEmail): string[] {
-  const serviceName = dependencyDisplayNames[runningLow.service];
-  return [
-    `${serviceName} is running low${runningLow.failureDetail ? `: ${runningLow.failureDetail}` : ""}. When it runs out, ${whatBreaksForUsers[runningLow.service]}.`,
-    whatToDo.running_low(runningLow.service),
-  ];
-}
-
 function recoveryParagraph(recovery: DependencyRecoveryForEmail): string {
   return `${dependencyDisplayNames[recovery.service]} is working again since ${formatPacificTime(recovery.recoveredAtIso)} PT, after being down for ${describeDowntime(recovery.downSinceIso, recovery.recoveredAtIso)}.`;
 }
 
-export const dailyEmailLimitNotice =
-  "You get at most one of these emails a day. If it is still broken tomorrow you will hear again, and the Health view always shows the live status.";
+export const alertEmailRuleNotice =
+  "You only get an email when something goes down and another when it is fixed. Nothing is sent while it stays down or while everything is working; the Health view always shows the live status, including anything running low.";
 
-export function buildHealthDailyEmail(emailInput: HealthDailyEmailInput): HealthEmail {
-  const subject = dailyEmailSubject(emailInput);
+export function buildHealthAlertEmail(emailInput: HealthAlertEmailInput): HealthEmail {
+  const subject = alertEmailSubject(emailInput);
   const paragraphs = [
     ...emailInput.outages.flatMap(outageParagraphs),
-    ...emailInput.runningLow.flatMap(runningLowParagraphs),
     ...emailInput.recoveries.map(recoveryParagraph),
-    dailyEmailLimitNotice,
+    alertEmailRuleNotice,
   ];
   const text = [...paragraphs, `Health view: ${emailInput.healthPageUrl}`].join("\n\n");
-  const accentColor = emailInput.outages.length > 0 ? "#dc2626" : emailInput.runningLow.length > 0 ? "#d97706" : "#16a34a";
+  const accentColor = emailInput.outages.length > 0 ? "#dc2626" : "#16a34a";
   const html =
     `<div style="font-family:-apple-system,BlinkMacSystemFont,Helvetica,Arial,sans-serif;max-width:560px;margin:0 auto;padding:24px;color:#111827">` +
     `<div style="border-left:4px solid ${accentColor};padding-left:14px">` +

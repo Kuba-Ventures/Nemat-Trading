@@ -260,9 +260,10 @@ export function HealthListView({ model, report, error, onRefresh }: {
       )}
 
       <p className="text-xs text-gray-500">
-        At most one email a day goes to the team, listing what is down, what is running low and what recovered. Running out of credit or
-        a rejected key counts on the first failed check; outages wait for a second check so a blip doesn't page anyone. A separate check
-        on Vercel watches the Railway API, so a Railway outage still gets noticed.
+        The team gets an email when something goes down and another when it is fixed, nothing in between and never an "all good".
+        Running low shows here only; a limit that actually runs out counts as down. Running out of credit or a rejected key counts on the
+        first failed check; outages wait for a second check so a blip doesn't page anyone. A separate check on Vercel watches the Railway
+        API, so a Railway outage still gets noticed.
       </p>
     </div>
   );
