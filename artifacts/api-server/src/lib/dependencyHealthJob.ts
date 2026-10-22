@@ -1,7 +1,7 @@
 // Runs the dependency health checks every 10 minutes inside the API process, the
 // same way the scorecard and Meta ads check schedulers run. Each run stores one
-// row per dependency in ai_service_checks and sends at most one health email per
-// Pacific day (see dependencyAlerts.ts). Recipients come from AI_HEALTH_ALERT_TO
+// row per dependency in ai_service_checks and emails only when something goes
+// down or is fixed (see dependencyAlerts.ts). Recipients come from AI_HEALTH_ALERT_TO
 // (comma separated, team addresses only), defaulting to Finley.
 //
 // Every read the email decision depends on goes straight to Postgres through
@@ -9,22 +9,20 @@
 // being treated as "no earlier checks" (an empty read is how Telly sent twice).
 
 import { pool } from "@workspace/db";
-import { dayKey, startOfBusinessDay } from "./metrics";
+import { startOfBusinessDay } from "./metrics";
 import {
-  anAlertEmailWentOutSince,
-  buildHealthDailyEmail,
+  aDownEmailWentOutForThisServiceSince,
+  buildHealthAlertEmail,
   downSinceForIncident,
   healthAlertRecipients,
   healthPageUrl,
   isOutageWorthReporting,
   isRecoveryAwaitingReport,
-  isRunningLowWorthReporting,
   reportedIncidentTimes,
   type DependencyAlertKind,
   type DependencyOutageForEmail,
   type DependencyRecoveryForEmail,
-  type DependencyRunningLowForEmail,
-  type HealthDailyEmailInput,
+  type HealthAlertEmailInput,
 } from "./dependencyAlerts";
 import {
   SHEETS_WEBHOOK_CALL,
@@ -90,16 +88,6 @@ async function readEarlierChecksNewestFirst(service: DependencyKey): Promise<Sto
   return rows.map(storedCheckFromRow);
 }
 
-// The outside watcher's "api" rows have their own daily budget, so a Railway
-// outage is never silenced by an email the API itself sent earlier that day.
-async function readReportedChecksSince(sinceIso: string): Promise<{ checkedAt: string; alertSent: DependencyAlertKind | null }[]> {
-  const { rows } = await pool.query<{ checked_at: Date; alert_sent: DependencyAlertKind | null }>(
-    "SELECT checked_at, alert_sent FROM ai_service_checks WHERE alert_sent IS NOT NULL AND service <> 'api' AND checked_at >= $1",
-    [sinceIso],
-  );
-  return rows.map((row) => ({ checkedAt: new Date(row.checked_at).toISOString(), alertSent: row.alert_sent }));
-}
-
 async function readLastSheetsWebhookCall(): Promise<SheetsWebhookCall | null> {
   const { rows } = await pool.query<{ checked_at: Date; status: string; failure_detail: string | null }>(
     "SELECT checked_at, status, failure_detail FROM ai_service_checks WHERE service = $1 ORDER BY checked_at DESC LIMIT 1",
@@ -123,13 +111,13 @@ export async function recordSheetsWebhookCall(ok: boolean, error: string | null)
 }
 
 /** Sends through Resend. Returns false (never throws) when the send failed. */
-async function sendHealthDailyEmail(emailInput: HealthDailyEmailInput, recipients: string[], idempotencyKey: string): Promise<boolean> {
+async function sendHealthAlertEmail(emailInput: HealthAlertEmailInput, recipients: string[], idempotencyKey: string): Promise<boolean> {
   const resendApiKey = process.env.RESEND_API_KEY;
   if (!resendApiKey) {
     console.warn("[dependency-health] RESEND_API_KEY not set, cannot send the health email");
     return false;
   }
-  const healthEmail = buildHealthDailyEmail(emailInput);
+  const healthEmail = buildHealthAlertEmail(emailInput);
   try {
     const resendResponse = await fetch("https://api.resend.com/emails", {
       method: "POST",
@@ -162,7 +150,7 @@ async function sendHealthDailyEmail(emailInput: HealthDailyEmailInput, recipient
 
 export type HealthRunOutcome = {
   checks: { service: DependencyKey; status: DependencyStatus; alertSent: DependencyAlertKind | null }[];
-  email: "sent" | "not_needed" | "already_sent_today" | "no_recipients" | "send_failed";
+  email: "sent" | "not_needed" | "no_recipients" | "send_failed";
 };
 
 async function runAllChecks(now: Date): Promise<DependencyCheckResult[]> {
@@ -195,13 +183,16 @@ export async function runDependencyHealthCheck(now = new Date()): Promise<Health
     ),
   );
 
+  const startOfTodayIso = startOfBusinessDay(now).toISOString();
   const outages: DependencyOutageForEmail[] = [];
-  const runningLow: DependencyRunningLowForEmail[] = [];
   const recoveries: DependencyRecoveryForEmail[] = [];
   const alertKindByService = new Map<DependencyKey, DependencyAlertKind>();
   checkResults.forEach((checkResult, index) => {
     const earlierChecksNewestFirst = earlierChecksByService[index];
-    if (isOutageWorthReporting(checkResult, earlierChecksNewestFirst)) {
+    const outageIsNewAndNotAlreadyEmailedToday =
+      isOutageWorthReporting(checkResult, earlierChecksNewestFirst) &&
+      !aDownEmailWentOutForThisServiceSince(earlierChecksNewestFirst, startOfTodayIso);
+    if (outageIsNewAndNotAlreadyEmailedToday) {
       outages.push({
         service: checkResult.service,
         failureKind: checkResult.failureKind,
@@ -209,9 +200,6 @@ export async function runDependencyHealthCheck(now = new Date()): Promise<Health
         downSinceIso: downSinceForIncident(earlierChecksNewestFirst, nowIso),
       });
       alertKindByService.set(checkResult.service, "down");
-    } else if (isRunningLowWorthReporting(checkResult)) {
-      runningLow.push({ service: checkResult.service, failureDetail: checkResult.failureDetail });
-      alertKindByService.set(checkResult.service, "running_low");
     } else if (isRecoveryAwaitingReport(checkResult, earlierChecksNewestFirst)) {
       recoveries.push({ service: checkResult.service, ...reportedIncidentTimes(earlierChecksNewestFirst, nowIso) });
       alertKindByService.set(checkResult.service, "recovered");
@@ -219,20 +207,14 @@ export async function runDependencyHealthCheck(now = new Date()): Promise<Health
   });
 
   let email: HealthRunOutcome["email"] = "not_needed";
-  if (outages.length || runningLow.length || recoveries.length) {
-    const emailAlreadySentToday = anAlertEmailWentOutSince(
-      await readReportedChecksSince(startOfBusinessDay(now).toISOString()),
-      startOfBusinessDay(now).toISOString(),
-    );
-    if (emailAlreadySentToday) {
-      email = "already_sent_today";
-    } else if (!recipients.length) {
+  if (outages.length || recoveries.length) {
+    if (!recipients.length) {
       email = "no_recipients";
     } else {
-      const sent = await sendHealthDailyEmail(
-        { outages, runningLow, recoveries, healthPageUrl: healthPageUrl() },
+      const sent = await sendHealthAlertEmail(
+        { outages, recoveries, healthPageUrl: healthPageUrl() },
         recipients,
-        `dependency-health-${dayKey(now)}`,
+        `dependency-health-${nowIso}`,
       );
       email = sent ? "sent" : "send_failed";
     }
@@ -298,7 +280,7 @@ export function startDependencyHealthScheduler(): void {
   }
   const recipients = healthAlertRecipients();
   console.log(
-    `[dependency-health] on, checking every 10 minutes, at most one email a day to ${recipients.join(", ") || "nobody (AI_HEALTH_ALERT_TO has no team address)"}`,
+    `[dependency-health] on, checking every 10 minutes, down and fixed emails to ${recipients.join(", ") || "nobody (AI_HEALTH_ALERT_TO has no team address)"}`,
   );
   const tick = () =>
     runDependencyHealthCheck()

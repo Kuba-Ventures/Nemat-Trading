@@ -7,10 +7,11 @@
 //
 // The API is down when it doesn't answer (two runs in a row, so a blip doesn't
 // page anyone) or when it answers but has recorded no check for 30 minutes (on
-// the first run). Like the API's own checks it sends at most one email per
-// Pacific day: an outage still going the next day is mentioned again then, and a
-// recovery waits for the next email. Every read goes to Supabase uncached, and a
-// failed read stops the run rather than counting as "no earlier rows".
+// the first run). Like the API's own checks it emails only on a change: one
+// email when the API goes down, one when it answers again, nothing in between,
+// and at most one down email per Pacific day if it keeps flipping. Every read
+// goes to Supabase uncached, and a failed read stops the run rather than
+// counting as "no earlier rows".
 //
 // Needs on Vercel: CRON_SECRET, SUPABASE_SERVICE_ROLE_KEY, RESEND_API_KEY.
 // Reads VITE_API_URL and VITE_SUPABASE_URL, which the project already has.
@@ -82,20 +83,20 @@ export function decideWatcherEmail(
   earlierRowsNewestFirst: WatcherRow[],
   now: Date,
 ): WatcherAlertKind | null {
-  const startOfToday = startOfPacificDay(now).getTime();
-  const emailAlreadySentToday = earlierRowsNewestFirst.some(
-    (row) => row.alertSent !== null && Date.parse(row.checkedAt) >= startOfToday,
-  );
-  if (emailAlreadySentToday) return null;
-  if (result.status === "down") {
-    const worthReporting = result.failureKind === "checks_stopped" || earlierRowsNewestFirst[0]?.status === "down";
-    return worthReporting ? "down" : null;
-  }
+  const lastReported = earlierRowsNewestFirst.find((row) => row.alertSent !== null);
   if (result.status === "working") {
-    const lastReported = earlierRowsNewestFirst.find((row) => row.alertSent !== null);
     return lastReported?.alertSent === "down" ? "recovered" : null;
   }
-  return null;
+  if (result.status !== "down") return null;
+  const indexOfLastWorking = earlierRowsNewestFirst.findIndex((row) => row.status === "working");
+  const currentOutageRows = indexOfLastWorking === -1 ? earlierRowsNewestFirst : earlierRowsNewestFirst.slice(0, indexOfLastWorking);
+  if (currentOutageRows.some((row) => row.alertSent === "down")) return null;
+  const startOfToday = startOfPacificDay(now).getTime();
+  const downEmailAlreadySentToday = earlierRowsNewestFirst.some(
+    (row) => row.alertSent === "down" && Date.parse(row.checkedAt) >= startOfToday,
+  );
+  if (downEmailAlreadySentToday) return null;
+  return result.failureKind === "checks_stopped" || earlierRowsNewestFirst[0]?.status === "down" ? "down" : null;
 }
 
 export function downSince(earlierRowsNewestFirst: WatcherRow[], fallbackIso: string): string {
@@ -153,11 +154,11 @@ export function buildWatcherEmail(input: {
             ? "The API answers but hasn't recorded a health check for over 30 minutes, so its checks have stopped. Check the api-server logs in Railway."
             : "Railway isn't answering. Check the api-server service in Railway (deploy logs, crashes, billing).",
           `What the outside check saw: ${input.result.failureDetail ?? "no answer"}`,
-          "This came from the outside check on Vercel, because Railway can't report its own outage. You get at most one of these a day; the Health view always shows the live status.",
+          "This came from the outside check on Vercel, because Railway can't report its own outage. You'll get one more email when it answers again, and nothing in between; the Health view always shows the live status.",
         ]
       : [
           `The Railway API server is working again since ${pacificTime(input.nowIso)} PT, after being down for ${describeDuration(input.downSinceIso, input.nowIso)}.`,
-          "You get at most one of these a day; the Health view always shows the live status.",
+          "You only get an email when the API goes down and another when it is fixed; the Health view always shows the live status.",
         ];
   const subject =
     input.alertKind === "down"
@@ -287,7 +288,7 @@ export async function GET(request: Request): Promise<Response> {
       nowIso,
       healthPageUrl: `${site}/admin?view=health`,
     });
-    const sent = await sendThroughResend(email, recipients, `railway-watch-${pacificDayKey(now)}`);
+    const sent = await sendThroughResend(email, recipients, `railway-watch-${alertKind}-${nowIso}`);
     alertSent = sent ? alertKind : null;
   }
 

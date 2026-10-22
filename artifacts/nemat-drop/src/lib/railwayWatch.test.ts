@@ -33,17 +33,22 @@ describe("outside Railway watcher", () => {
     expect(decideWatcherEmail({ status: "down", failureKind: "checks_stopped", failureDetail: null }, [], now)).toBe("down");
   });
 
-  it("sends at most one email per Pacific day", () => {
-    const earlier = [row("2026-10-22T19:50:00.000Z", "down"), row("2026-10-22T15:00:00.000Z", "down", "down")];
-    expect(decideWatcherEmail(unreachable, earlier, now)).toBeNull();
-    const yesterday = [row("2026-10-22T19:50:00.000Z", "down"), row("2026-10-21T15:00:00.000Z", "down", "down")];
-    expect(decideWatcherEmail(unreachable, yesterday, now)).toBe("down");
+  it("emails once when the API goes down and not again while it stays down", () => {
+    const stillDown = [row("2026-10-22T19:50:00.000Z", "down"), row("2026-10-21T15:00:00.000Z", "down", "down")];
+    expect(decideWatcherEmail(unreachable, stillDown, now)).toBeNull();
   });
 
-  it("reports a recovery only after a down email, and not twice in a day", () => {
-    expect(decideWatcherEmail({ status: "working", failureKind: null, failureDetail: null }, [row("2026-10-21T19:50:00.000Z", "down", "down")], now)).toBe("recovered");
-    expect(decideWatcherEmail({ status: "working", failureKind: null, failureDetail: null }, [row("2026-10-22T19:50:00.000Z", "down", "down")], now)).toBeNull();
+  it("emails once when it answers again, and only after a down email", () => {
+    expect(decideWatcherEmail({ status: "working", failureKind: null, failureDetail: null }, [row("2026-10-22T19:50:00.000Z", "down", "down")], now)).toBe("recovered");
     expect(decideWatcherEmail({ status: "working", failureKind: null, failureDetail: null }, [row("2026-10-22T19:50:00.000Z", "down")], now)).toBeNull();
+    expect(decideWatcherEmail({ status: "working", failureKind: null, failureDetail: null }, [row("2026-10-22T19:50:00.000Z", "working", "recovered")], now)).toBeNull();
+  });
+
+  it("a flapping API gets at most one down email per Pacific day", () => {
+    const flapped = [row("2026-10-22T19:50:00.000Z", "down"), row("2026-10-22T19:40:00.000Z", "working", "recovered"), row("2026-10-22T16:00:00.000Z", "down", "down")];
+    expect(decideWatcherEmail(unreachable, flapped, now)).toBeNull();
+    const flappedYesterday = [row("2026-10-22T19:50:00.000Z", "down"), row("2026-10-22T19:40:00.000Z", "working", "recovered"), row("2026-10-21T16:00:00.000Z", "down", "down")];
+    expect(decideWatcherEmail(unreachable, flappedYesterday, now)).toBe("down");
   });
 
   it("finds when the outage started and the Pacific day boundary", () => {
