@@ -66,7 +66,7 @@ router.post("/admin/backfill-orders", requireAdmin, async (_req, res) => {
     const existing = new Set(existingRows.map((r) => r.sid));
 
     // Walk every Checkout Session (auto-paginates).
-    for await (const session of stripe.checkout.sessions.list({ limit: 100 })) {
+    for await (const session of stripe.checkout.sessions.list({ limit: 100, expand: ["data.payment_intent.latest_charge"] })) {
       scanned++;
       if (session.status !== "complete" || session.payment_status !== "paid" || skipBackfillSession(session, existing)) {
         skipped++;

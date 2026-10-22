@@ -2,12 +2,22 @@ import type Stripe from "stripe";
 import { attributionColumnsFromMetadata } from "./attribution";
 import { isInternalEmail } from "./metrics";
 
+/** Fully refunded, from a session listed with expand: ["data.payment_intent.latest_charge"]. */
+export function isFullyRefunded(session: Stripe.Checkout.Session): boolean {
+  const pi = typeof session.payment_intent === "object" ? session.payment_intent : null;
+  const charge = pi && typeof pi.latest_charge === "object" ? pi.latest_charge : null;
+  const total = session.amount_total ?? 0;
+  return !!charge && total > 0 && charge.amount_refunded >= total;
+}
+
 /**
- * Backfill skips team test orders (qsbsrollover addresses) we haven't already kept,
- * so ones deleted from the admin Orders list stay deleted. Kept ones still update.
+ * Backfill imports live orders only: it skips team test orders (qsbsrollover
+ * addresses) and fully refunded ones we haven't already kept, so ones deleted
+ * from the admin Orders list stay deleted. Kept ones still update.
  */
 export function skipBackfillSession(session: Stripe.Checkout.Session, existing: Set<string>): boolean {
-  return !existing.has(session.id) && isInternalEmail(session.customer_details?.email);
+  if (existing.has(session.id)) return false;
+  return isInternalEmail(session.customer_details?.email) || isFullyRefunded(session);
 }
 
 // Build the orders-table row from an (expanded) Stripe Checkout Session.
