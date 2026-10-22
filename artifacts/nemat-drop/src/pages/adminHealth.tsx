@@ -1,61 +1,55 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
+import {
+  MAP_VIEWBOX,
+  buildHealthViewModel,
+  mapLines,
+  rowsByGroup,
+  type Banner,
+  type HealthReport,
+  type HealthRow,
+  type HealthViewModel,
+  type TimelineSlot,
+  type ViewStatus,
+} from "@/lib/dependencyHealth";
 
-// Health view for /admin, fed by GET /api/admin/ai-health. The API checks every
-// AI service the shop calls (Claude, remove.bg) every 10 minutes with the real
-// keys and emails the team when one goes down and again when it recovers.
+// Health (list) and Map views for /admin, fed by GET /api/admin/dependency-health.
+// Designs picked by the owner from the 2026-10-21 mockups: option A (everything
+// in one list) for Health and option B (map of what customers use) for Map.
 
-// ─── Types (mirror artifacts/api-server/src/lib/aiHealthSummary.ts) ──────────
+export type HealthLoader = () => Promise<HealthReport>;
 
-type ServiceStatus = "working" | "down" | "unknown" | "never_checked";
-type TimelineSlot = "working" | "down" | "no_data";
-
-type HealthService = {
-  service: string;
-  displayName: string;
-  currentStatus: ServiceStatus;
-  lastCheckedAtIso: string | null;
-  lastLatencyMilliseconds: number | null;
-  currentFailureSummary: string | null;
-  currentFailureDetail: string | null;
-  whatBreaksWhileDown: string;
-  uptimePercent: number | null;
-  timelineSlots: TimelineSlot[];
-};
-
-type HealthIncident = {
-  service: string;
-  displayName: string;
-  startedAtIso: string;
-  endedAtIso: string | null;
-  failureSummary: string;
-  durationText: string;
-};
-
-export type AiHealthReport = {
-  generatedAt: string;
-  windowStartIso: string;
-  windowDays: number;
-  services: HealthService[];
-  incidentsNewestFirst: HealthIncident[];
-  downCount: number;
-};
-
-export type AiHealthLoader = () => Promise<AiHealthReport>;
+// Thrown by the loader when the API itself doesn't answer, as opposed to the API
+// answering with an error. Only this one turns the views into "API is down".
+export class ApiUnreachableError extends Error {}
 
 const POLL_MS = 60_000;
 
-// ─── Data hook (shared by the banner, the nav badge and the view) ───────────
+// ─── Data hook (shared by the banner, the nav badge and both views) ──────────
 
-export function useAiHealth(load: AiHealthLoader, enabled: boolean) {
-  const [report, setReport] = useState<AiHealthReport | null>(null);
+export function useDependencyHealth(load: HealthLoader, enabled: boolean) {
+  const [report, setReport] = useState<HealthReport | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [apiUnreachableSinceIso, setApiUnreachableSinceIso] = useState<string | null>(null);
+  const [tickCount, tick] = useState(0);
   const sequence = useRef(0);
 
   const refresh = useCallback(() => {
     const requestNumber = ++sequence.current;
     return load()
-      .then((loaded) => { if (requestNumber === sequence.current) { setReport(loaded); setError(null); } })
-      .catch((err) => { if (requestNumber === sequence.current) setError(err?.message ?? "Couldn't load health checks"); });
+      .then((loaded) => {
+        if (requestNumber !== sequence.current) return;
+        setReport(loaded);
+        setError(null);
+        setApiUnreachableSinceIso(null);
+      })
+      .catch((err) => {
+        if (requestNumber !== sequence.current) return;
+        if (err instanceof ApiUnreachableError) {
+          setApiUnreachableSinceIso((since) => since ?? new Date().toISOString());
+        } else {
+          setError(err?.message ?? "Couldn't load health checks");
+        }
+      });
   }, [load]);
 
   useEffect(() => {
@@ -64,181 +58,286 @@ export function useAiHealth(load: AiHealthLoader, enabled: boolean) {
     const poll = window.setInterval(() => {
       if (document.visibilityState === "visible") refresh();
     }, POLL_MS);
+    const ticker = window.setInterval(() => tick((n) => n + 1), 30_000);
     return () => {
       sequence.current++;
       window.clearInterval(poll);
+      window.clearInterval(ticker);
     };
   }, [enabled, refresh]);
 
-  return { report, error, refresh };
+  const model = useMemo(
+    () => buildHealthViewModel(report, apiUnreachableSinceIso, Date.now()),
+    // tickCount re-renders the relative times ("3m ago") between polls.
+    [report, apiUnreachableSinceIso, tickCount],
+  );
+  return { report, model, error, refresh };
 }
 
-// ─── Formatting ───────────────────────────────────────────────────────────────
+// ─── Building blocks ──────────────────────────────────────────────────────────
 
-const pacificTime = (iso: string) =>
-  new Date(iso).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
-
-function relativeTime(iso: string, nowMs: number): string {
-  const minutes = Math.max(0, Math.round((nowMs - Date.parse(iso)) / 60_000));
-  if (minutes < 1) return "just now";
-  if (minutes < 60) return `${minutes} min ago`;
-  const hours = Math.round(minutes / 60);
-  if (hours < 48) return `${hours} h ago`;
-  return `${Math.round(hours / 24)} days ago`;
-}
-
-const STATUS_DOT: Record<ServiceStatus, string> = {
-  working: "bg-emerald-400",
-  down: "bg-red-400",
-  unknown: "bg-amber-400",
-  never_checked: "bg-gray-500",
+const DOT: Record<ViewStatus, string> = {
+  working: "bg-emerald-400 shadow-[0_0_6px_rgba(52,211,153,0.6)]",
+  warning: "bg-amber-400",
+  down: "bg-red-400 shadow-[0_0_6px_rgba(248,113,113,0.7)]",
+  unknown: "bg-gray-500",
+  cant_check: "bg-gray-600",
 };
 
-const SLOT_COLOR: Record<TimelineSlot, string> = {
-  working: "bg-emerald-500/70",
+const MAP_COLOR: Record<ViewStatus, string> = {
+  working: "#34d399",
+  warning: "#fbbf24",
+  down: "#f87171",
+  unknown: "#5b6b77",
+  cant_check: "#5b6b77",
+};
+
+const SLOT: Record<TimelineSlot, string> = {
+  working: "bg-emerald-400/60",
+  warning: "bg-amber-400",
   down: "bg-red-400",
   no_data: "bg-white/[0.06]",
 };
 
-function statusLine(service: HealthService, nowMs: number): string {
-  if (service.currentStatus === "never_checked" || !service.lastCheckedAtIso) {
-    return "Not checked yet. The first check runs within 10 minutes of the API starting.";
-  }
-  const checked = `checked ${relativeTime(service.lastCheckedAtIso, nowMs)}`;
-  if (service.currentStatus === "working") {
-    const reply = service.lastLatencyMilliseconds != null ? `, answered in ${(service.lastLatencyMilliseconds / 1000).toFixed(1)}s` : "";
-    return `Working, ${checked}${reply}`;
-  }
-  const why = service.currentFailureSummary ?? "the check could not tell";
-  return service.currentStatus === "down" ? `Down: ${why}, ${checked}` : `Unknown: ${why}, ${checked}`;
+const BANNER_TONE: Record<Banner["tone"], { box: string; dot: ViewStatus }> = {
+  ok: { box: "border-emerald-400/25 bg-emerald-400/[0.08] text-emerald-100", dot: "working" },
+  warn: { box: "border-amber-400/40 bg-amber-400/10 text-amber-100", dot: "warning" },
+  down: { box: "border-red-400/45 bg-red-400/[0.12] text-red-100", dot: "down" },
+  loading: { box: "border-white/10 bg-white/[0.03] text-gray-400", dot: "unknown" },
+};
+
+function Dot({ status }: { status: ViewStatus }) {
+  return <span className={`inline-block h-2 w-2 shrink-0 rounded-full ${DOT[status]}`} />;
 }
 
-// ─── Banner shown on every admin page while something is down ───────────────
+function StatusBanner({ banner, onClick }: { banner: Banner; onClick?: () => void }) {
+  const tone = BANNER_TONE[banner.tone];
+  const content = (
+    <>
+      <Dot status={tone.dot} />
+      <span className="min-w-0 flex-1">
+        {banner.headline && <b className="font-semibold">{banner.headline} </b>}
+        {banner.body}
+      </span>
+      {onClick && <span className="shrink-0 font-semibold">Health →</span>}
+    </>
+  );
+  const className = `flex w-full items-center gap-2.5 rounded-lg border px-3.5 py-2.5 text-left text-sm ${tone.box}`;
+  return onClick ? (
+    <button onClick={onClick} className={`${className} transition-colors hover:border-red-400`}>{content}</button>
+  ) : (
+    <div className={className} role="status">{content}</div>
+  );
+}
 
-export function AiHealthDownBanner({ report, onOpen }: { report: AiHealthReport | null; onOpen: () => void }) {
-  const down = report?.services.filter((s) => s.currentStatus === "down") ?? [];
-  if (!down.length) return null;
+function PageHeader({ title, onRefresh }: { title: string; onRefresh: () => Promise<void> | void }) {
+  const [refreshing, setRefreshing] = useState(false);
+  async function refreshNow() {
+    setRefreshing(true);
+    try { await onRefresh(); } finally { setRefreshing(false); }
+  }
   return (
-    <div className="mb-6 flex flex-col gap-2">
-      {down.map((s) => (
-        <button
-          key={s.service}
-          onClick={onOpen}
-          className="flex w-full items-center gap-3 rounded-lg border border-red-400/40 bg-red-500/10 px-4 py-3 text-left text-sm text-red-200 transition-colors hover:border-red-400"
-        >
-          <span className="h-2 w-2 shrink-0 rounded-full bg-red-400" />
-          <span className="min-w-0 flex-1">
-            <strong className="text-red-100">{s.displayName} is down.</strong>{" "}
-            {s.currentFailureSummary ? `It says ${s.currentFailureSummary}. ` : ""}
-            {s.lastCheckedAtIso ? `Last checked ${pacificTime(s.lastCheckedAtIso)} PT.` : ""}
-          </span>
-          <span className="shrink-0 font-semibold text-red-300">Health →</span>
-        </button>
+    <div className="flex flex-wrap items-end justify-between gap-3">
+      <div>
+        <h1 className="text-2xl font-bold text-white">{title}</h1>
+        <p className="mt-1 text-sm text-gray-500">Everything the shop depends on, checked every 10 minutes with its real keys.</p>
+      </div>
+      <button
+        onClick={refreshNow}
+        disabled={refreshing}
+        className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:border-cyan-400/50 disabled:opacity-60"
+      >
+        {refreshing ? "Loading..." : "Refresh"}
+      </button>
+    </div>
+  );
+}
+
+// ─── Banner on every other admin page while something is down ───────────────
+
+export function HealthDownBanner({ model, onOpen }: { model: HealthViewModel; onOpen: () => void }) {
+  if (model.banner.tone !== "down") return null;
+  return (
+    <div className="mb-6">
+      <StatusBanner banner={model.banner} onClick={onOpen} />
+    </div>
+  );
+}
+
+// ─── Health: everything in one list (option A) ──────────────────────────────
+
+function Strip({ slots }: { slots: TimelineSlot[] }) {
+  if (!slots.length) return null;
+  return (
+    <div className="mt-1.5 flex gap-px" aria-label="Last 7 days">
+      {slots.map((slot, index) => (
+        <i key={index} className={`block h-2 min-w-0 flex-1 rounded-[1px] ${SLOT[slot]}`} />
       ))}
     </div>
   );
 }
 
-// ─── Health view ──────────────────────────────────────────────────────────────
-
-function Card({ children }: { children: React.ReactNode }) {
-  return <section className="min-w-0 rounded-lg border border-white/10 bg-white/[0.03] p-4">{children}</section>;
-}
-
-function ServiceCard({ service, windowStartIso, windowDays, nowMs }: {
-  service: HealthService;
-  windowStartIso: string;
-  windowDays: number;
-  nowMs: number;
-}) {
+function DependencyRow({ row }: { row: HealthRow }) {
+  const tone =
+    row.status === "down"
+      ? "bg-red-400/10 outline outline-1 outline-red-400/35"
+      : row.status === "warning"
+        ? "bg-white/[0.03] outline outline-1 outline-amber-400/30"
+        : "bg-white/[0.03]";
   return (
-    <Card>
-      <div className="mb-3 flex flex-wrap items-center gap-x-3 gap-y-1">
-        <span className={`h-2.5 w-2.5 rounded-full ${STATUS_DOT[service.currentStatus]}`} />
-        <span className="text-base font-bold text-white">{service.displayName}</span>
-        <span className="text-sm text-gray-400">{statusLine(service, nowMs)}</span>
-        <span className="w-full text-sm tabular-nums text-gray-300 sm:ml-auto sm:w-auto">
-          {service.uptimePercent == null ? "No data yet" : `${service.uptimePercent}% up, ${windowDays} days`}
-        </span>
+    <div className={`grid grid-cols-[10px_minmax(0,1fr)_auto] items-center gap-3 rounded-lg px-3 py-2.5 ${tone}`}>
+      <Dot status={row.status} />
+      <div className="min-w-0">
+        <div className="text-sm font-semibold text-white">{row.name}</div>
+        <div className="text-xs text-gray-500">{row.subtitle}</div>
+        <div className="max-w-md"><Strip slots={row.timelineSlots} /></div>
       </div>
-      {service.currentStatus === "down" && (
-        <div className="mb-3 rounded-md bg-red-500/10 px-3 py-2.5 text-sm leading-relaxed text-red-200">
-          While this is down, {service.whatBreaksWhileDown}.
-          {service.currentFailureDetail ? ` ${service.displayName} said: ${service.currentFailureDetail}` : ""}
-        </div>
-      )}
-      <div className="flex gap-[2px]" aria-label={`${service.displayName} checks over the last ${windowDays} days`}>
-        {service.timelineSlots.map((slot, index) => (
-          <span key={index} className={`h-[22px] flex-1 rounded-[2px] ${SLOT_COLOR[slot]}`} />
-        ))}
+      <div className="max-w-[45vw] text-right text-xs text-gray-400 sm:max-w-[16rem]">
+        <div className={`truncate ${row.status === "down" ? "font-semibold text-red-300" : row.status === "warning" ? "font-semibold text-amber-200" : "text-gray-200"}`}>{row.primary}</div>
+        {row.secondary && <div className="truncate">{row.secondary}</div>}
       </div>
-      <div className="mt-1.5 flex justify-between text-[11px] text-gray-500">
-        <span>{pacificTime(windowStartIso)} PT</span>
-        <span>now</span>
-      </div>
-    </Card>
+    </div>
   );
 }
 
-export function HealthView({ report, error, onRefresh }: { report: AiHealthReport | null; error: string | null; onRefresh: () => void }) {
-  const [refreshing, setRefreshing] = useState(false);
-  const nowMs = Date.now();
+const pacificTime = (instantIso: string) =>
+  new Date(instantIso).toLocaleString("en-US", { timeZone: "America/Los_Angeles", month: "short", day: "numeric", hour: "numeric", minute: "2-digit" });
 
-  async function refreshNow() {
-    setRefreshing(true);
-    try { await onRefresh(); } finally { setRefreshing(false); }
-  }
-
+export function HealthListView({ model, report, error, onRefresh }: {
+  model: HealthViewModel;
+  report: HealthReport | null;
+  error: string | null;
+  onRefresh: () => Promise<void> | void;
+}) {
   return (
     <div className="flex flex-col gap-4">
-      <div className="mb-2 flex flex-wrap items-end justify-between gap-3">
-        <div>
-          <h1 className="text-2xl font-bold text-white">Health</h1>
-          <p className="mt-1 text-sm text-gray-500">Checks every AI service the shop depends on every 10 minutes, with its real keys.</p>
-        </div>
-        <button
-          onClick={refreshNow}
-          disabled={refreshing}
-          className="inline-flex items-center gap-1.5 rounded-md border border-white/10 bg-white/[0.04] px-3 py-1.5 text-xs font-semibold text-white transition-colors hover:border-cyan-400/50 disabled:opacity-60"
-        >
-          {refreshing ? "Loading..." : "Refresh"}
-        </button>
-      </div>
-
+      <PageHeader title="Health" onRefresh={onRefresh} />
+      <StatusBanner banner={model.banner} />
       {error && <p className="text-sm text-red-400">Couldn't load: {error}</p>}
-      {!report && !error && <p className="text-sm text-gray-500">Loading...</p>}
 
-      {report?.services.map((service) => (
-        <ServiceCard key={service.service} service={service} windowStartIso={report.windowStartIso} windowDays={report.windowDays} nowMs={nowMs} />
+      {rowsByGroup(model.rows).map(({ group, rows }) => (
+        <section key={group}>
+          <h2 className="mb-2 mt-2 text-[10px] uppercase tracking-[0.14em] text-gray-500">{group}</h2>
+          <div className="flex flex-col gap-1.5">
+            {rows.map((row) => <DependencyRow key={row.key} row={row} />)}
+          </div>
+        </section>
       ))}
 
-      {report && (
-        <Card>
-          <h2 className="mb-3 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Incidents, last {report.windowDays} days</h2>
-          {report.incidentsNewestFirst.length === 0 ? (
-            <p className="text-sm text-gray-500">No incidents.</p>
-          ) : (
-            <ul>
-              {report.incidentsNewestFirst.map((incident) => (
-                <li key={`${incident.service}-${incident.startedAtIso}`} className="flex flex-wrap items-baseline justify-between gap-x-4 gap-y-0.5 border-t border-white/5 py-2 text-sm first:border-t-0">
-                  <span className="text-white">
-                    {incident.displayName}: {incident.failureSummary}.{" "}
-                    {incident.endedAtIso === null ? `Ongoing for ${incident.durationText}.` : `Down for ${incident.durationText}.`}
-                  </span>
-                  <span className={`tabular-nums ${incident.endedAtIso === null ? "text-red-400" : "text-gray-500"}`}>
-                    {pacificTime(incident.startedAtIso)} PT
-                  </span>
-                </li>
-              ))}
-            </ul>
-          )}
-          <p className="mt-3 text-xs text-gray-500">
-            An email goes to the team the moment a service goes down and again when it recovers. Running out of credit or a
-            rejected key alerts on the first failed check; outages wait for a second check so a blip doesn't page anyone.
-            Anthropic has no API for prepaid credit left, so this live check is what catches running out.
-          </p>
-        </Card>
+      {model.secrets.length > 0 && (
+        <section>
+          <h2 className="mb-2 mt-2 text-[10px] uppercase tracking-[0.14em] text-gray-500">Secrets present</h2>
+          <div className="flex flex-wrap gap-1.5">
+            {model.secrets.map((secret) => (
+              <span
+                key={secret.label}
+                className={`inline-flex items-center gap-1.5 rounded-full border px-2.5 py-1 text-xs ${secret.present ? "border-white/10 bg-white/[0.03] text-gray-200" : "border-red-400/60 text-red-200"}`}
+              >
+                <Dot status={secret.present ? "working" : "down"} />
+                {secret.label}
+                {!secret.present ? " missing" : secret.note ? ` (${secret.note})` : ""}
+              </span>
+            ))}
+          </div>
+          <p className="mt-2 text-xs text-gray-500">Only checks that each secret is set. Values never leave the server.</p>
+        </section>
       )}
+
+      {report && !model.apiDown && report.incidentsNewestFirst.length > 0 && (
+        <section className="rounded-lg border border-white/10 bg-white/[0.03] p-4">
+          <h2 className="mb-2 text-[11px] font-semibold uppercase tracking-[0.12em] text-gray-400">Incidents, last {report.windowDays} days</h2>
+          <ul>
+            {report.incidentsNewestFirst.map((incident) => (
+              <li key={`${incident.service}-${incident.startedAtIso}`} className="flex flex-wrap justify-between gap-x-4 border-t border-white/5 py-2 text-sm first:border-t-0">
+                <span className="text-white">
+                  {incident.displayName}: {incident.failureSummary}. {incident.endedAtIso === null ? `Ongoing for ${incident.durationText}.` : `Down for ${incident.durationText}.`}
+                </span>
+                <span className={`tabular-nums ${incident.endedAtIso === null ? "text-red-400" : "text-gray-500"}`}>{pacificTime(incident.startedAtIso)} PT</span>
+              </li>
+            ))}
+          </ul>
+        </section>
+      )}
+
+      <p className="text-xs text-gray-500">
+        At most one email a day goes to the team, listing what is down, what is running low and what recovered. Running out of credit or
+        a rejected key counts on the first failed check; outages wait for a second check so a blip doesn't page anyone. A separate check
+        on Vercel watches the Railway API, so a Railway outage still gets noticed.
+      </p>
+    </div>
+  );
+}
+
+// ─── Map: what customers use (option B) ──────────────────────────────────────
+
+function DependencyMap({ model }: { model: HealthViewModel }) {
+  const statusByKey = new Map(model.rows.map((row) => [row.key, row.status]));
+  const { width, height, boxHeight } = MAP_VIEWBOX;
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" role="img" aria-label="Map of what the shop depends on">
+      {mapLines(model.rows).map((line) => {
+        const childStatus = statusByKey.get(line.key);
+        const stroke = model.apiDown || childStatus === "down" ? "#7f2d2d" : "#1a4a5a";
+        return <line key={line.key} x1={line.x1} y1={line.y1} x2={line.x2} y2={line.y2} stroke={stroke} strokeWidth={1.6} />;
+      })}
+      {model.rows.map((row) => {
+        const color = MAP_COLOR[row.status];
+        const { x, y, width: boxWidth, label, sub } = row.map;
+        return (
+          <g key={row.key}>
+            <title>{`${row.name}: ${row.subtitle}`}</title>
+            <rect x={x} y={y} width={boxWidth} height={boxHeight} rx={7} fill="#0d1a24" stroke={color} strokeWidth={1.6} />
+            <circle cx={x + 12} cy={y + 13} r={4} fill={color} />
+            <text x={x + 22} y={y + 17} fill="#f0f0f0" fontSize={11} fontWeight={700}>{label}</text>
+            <text x={x + 10} y={y + 31} fill="#8a9aa6" fontSize={9.5}>{row.status === "cant_check" ? "can't check" : sub}</text>
+          </g>
+        );
+      })}
+    </svg>
+  );
+}
+
+const OUTCOME_COLOR: Record<ViewStatus, string> = {
+  working: "text-emerald-400",
+  warning: "text-amber-400",
+  down: "text-red-400",
+  unknown: "text-gray-500",
+  cant_check: "text-gray-500",
+};
+
+const LEGEND: { status: ViewStatus; label: string }[] = [
+  { status: "working", label: "working" },
+  { status: "warning", label: "running low" },
+  { status: "down", label: "down" },
+  { status: "cant_check", label: "can't check" },
+];
+
+export function HealthMapView({ model, error, onRefresh }: { model: HealthViewModel; error: string | null; onRefresh: () => Promise<void> | void }) {
+  return (
+    <div className="flex flex-col gap-4">
+      <PageHeader title="Map" onRefresh={onRefresh} />
+      <StatusBanner banner={model.banner} />
+      {error && <p className="text-sm text-red-400">Couldn't load: {error}</p>}
+      <section className="rounded-lg border border-white/10 bg-white/[0.03] p-3">
+        <div className="mx-auto max-w-2xl"><DependencyMap model={model} /></div>
+        <div className="mt-2 flex flex-wrap gap-3 text-[11px] text-gray-500">
+          {LEGEND.map((entry) => (
+            <span key={entry.status} className="inline-flex items-center gap-1.5">
+              <Dot status={entry.status} />
+              {entry.label}
+            </span>
+          ))}
+        </div>
+      </section>
+      <section className="rounded-lg border border-white/10 bg-white/[0.03] px-4 py-3">
+        <h2 className="mb-1.5 text-[11px] font-semibold uppercase tracking-[0.08em] text-gray-400">For customers and Tommy right now</h2>
+        {model.outcomes.map((outcome) => (
+          <div key={outcome.label} className="flex justify-between gap-4 border-t border-white/5 py-1.5 text-sm first:border-t-0">
+            <span className="text-white">{outcome.label}</span>
+            <span className={OUTCOME_COLOR[outcome.status]}>{outcome.statusText}</span>
+          </div>
+        ))}
+      </section>
     </div>
   );
 }

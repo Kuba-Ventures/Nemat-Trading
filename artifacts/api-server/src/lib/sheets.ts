@@ -1,3 +1,5 @@
+import { recordSheetsWebhookCall } from "./dependencyHealthJob";
+
 type SheetTab = "Email List" | "Orders";
 
 export type SheetResult = { ok: boolean; error?: string };
@@ -11,6 +13,14 @@ export type SheetResult = { ok: boolean; error?: string };
  * the Railway logs (or the admin "Re-sync" button) instead of failing silently.
  */
 async function postToSheet(payload: Record<string, unknown>): Promise<SheetResult> {
+  const result = await sendToSheet(payload);
+  // The admin Health view shows when the sheet last worked, since posting a
+  // test row just to check it would put fake data in the client's log.
+  if (process.env.SHEETS_WEBHOOK_URL) await recordSheetsWebhookCall(result.ok, result.error ?? null);
+  return result;
+}
+
+async function sendToSheet(payload: Record<string, unknown>): Promise<SheetResult> {
   const url = process.env.SHEETS_WEBHOOK_URL;
   const secret = process.env.SHEETS_WEBHOOK_SECRET;
   if (!url) return { ok: false, error: "SHEETS_WEBHOOK_URL not set" };

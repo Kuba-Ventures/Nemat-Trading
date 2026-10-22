@@ -92,7 +92,8 @@ Set these in the Railway service's "Variables" panel.
 | `API_BASE_URL` | Optional | Base URL prepended to uploaded image paths returned by `POST /api/admin/upload`. If unset, paths are returned relative (e.g. `/uploads/filename.jpg`). Only matters if you serve uploads from a CDN. | Your Railway service's public URL |
 | `ANTHROPIC_API_KEY` | Optional | Used by the card-intel endpoint in `scryfall.ts` to call Claude. Returns 503 if not set. | [console.anthropic.com](https://console.anthropic.com) |
 | `REMOVE_BG_API_KEY` | Optional | Used by the background-removal endpoint in `scryfall.ts`. Returns 503 if not set. | [remove.bg/api](https://www.remove.bg/api) |
-| `AI_HEALTH_ALERT_TO` | Optional | Comma-separated team addresses (qsbsrollover.com only) for the AI health down and recovered emails. Defaults to `finley@qsbsrollover.com`. Sent with `RESEND_API_KEY` from `ORDER_EMAIL_FROM`. | Team addresses |
+| `AI_HEALTH_ALERT_TO` | Optional | Comma-separated team addresses (qsbsrollover.com only) for the daily dependency health email. Defaults to `finley@qsbsrollover.com`. Sent with `RESEND_API_KEY` from `ORDER_EMAIL_FROM`. | Team addresses |
+| `CLOUDINARY_CLOUD_NAME`, `CLOUDINARY_UPLOAD_PRESET` | Optional | Used only by the Cloudinary health check. Default to the public values the storefront ships. | Same as the Vercel `VITE_CLOUDINARY_*` values |
 
 ---
 
@@ -159,17 +160,31 @@ Everything here except `/api/tcgplayer/price` requires the `x-admin-key: <ADMIN_
 | `GET` | `/api/admin/subscribers` | Lists all waitlist subscribers. |
 | `POST` | `/api/admin/sync-sheets` | Backfills all subscribers and orders to the Google Sheet. Clear existing data rows in the sheet before running to avoid duplicates. |
 | `POST` | `/api/admin/upload` | Accepts a multipart image upload (max 10 MB) and saves it to `uploads/` on the server. Returns `{ url }`. |
-| `GET` | `/api/admin/ai-health` | AI health report for the admin Health view: per service status, last check, reply time, 7 day timeline, uptime and incidents, plus `downCount` for the red banner and nav badge. |
+| `GET` | `/api/admin/dependency-health` | Health report for the admin Health and Map views: per dependency status, last check, reply time, balance, 7 day timeline, uptime and incidents, which required secrets are set (never their values), plus `downCount` and `warningCount`. |
 
-### AI health checks
+### Dependency health checks
 
-The API checks every AI service it calls at runtime every 10 minutes, with the real keys, and emails the team when one goes down and again when it recovers. This exists because Anthropic has no API for remaining prepaid credit, so running out is only visible to a live request.
+Everything the shop depends on is checked every 10 minutes with its real keys, using the cheapest authenticated read each service offers: nothing is charged, no label is bought, no email is sent and no row is written outside `ai_service_checks`. Anthropic has no API for remaining prepaid credit, so running out is only visible to a live request.
 
-- **What is checked:** Claude (`ANTHROPIC_API_KEY`, one `max_tokens: 1` request to `claude-haiku-5-5`) and remove.bg (`REMOVE_BG_API_KEY`, the free `GET /v1.0/account` balance read; under one credit counts as out of credits, since the shop requests size `auto`).
-- **Scheduler:** in process, like the scorecard and Meta ads check (`startAiHealthScheduler` in `src/lib/aiHealthJob.ts`), first run a minute after boot. Off when `NODE_ENV=development`.
-- **Storage:** one row per service per check in `ai_service_checks` (created by the bootstrap in `src/index.ts`, RLS on).
-- **Alerts:** out of credit or a rejected key alerts on the first failed check; outages, rate limits and network errors wait for a second failed check. One down email and one recovered email per incident, linking to `/admin?view=health`.
-- **Files:** `src/lib/aiHealthChecks.ts` (live checks and failure classification), `src/lib/aiHealthAlerts.ts` (alert decision and email), `src/lib/aiHealthSummary.ts` (timeline, uptime, incidents), `src/lib/aiHealthJob.ts` (storage, send, scheduler), `src/routes/aiHealth.ts`, and the front end's `src/pages/adminHealth.tsx`.
+| Dependency | Check |
+|---|---|
+| Vercel storefront | `GET` the first `FRONTEND_URL` entry |
+| Stripe | `GET /v1/balance` (a restricted key without balance access reads as "can't check", not down) |
+| Supabase database | `SELECT 1` through the existing pool |
+| Shippo | `GET /carrier_accounts?results=1` |
+| Resend | `GET /domains`: the `ORDER_EMAIL_FROM` domain must be verified (a sending-only key reads as "can't check") |
+| Google Sheets log | No test rows: `src/lib/sheets.ts` records each real webhook call, and the check shows when it last worked. No call yet is unknown, never down |
+| Claude | One `max_tokens: 1` request to `claude-haiku-5-5` with `ANTHROPIC_API_KEY` |
+| remove.bg | Free `GET /v1.0/account` balance read. Under one credit is down; credits lasting about 7 days or less at this week's pace is "running low" |
+| Cloudinary | An unsigned upload with the preset and no file, which Cloudinary rejects before storing anything; "Missing required parameter - file" proves the cloud name and preset. Usage needs an API secret the shop doesn't have, so it shows "can't check usage" and is never down. Reads `CLOUDINARY_CLOUD_NAME` / `CLOUDINARY_UPLOAD_PRESET`, defaulting to the public values the storefront already ships |
+| Railway API server | Checked from outside Railway, see below |
+
+- **Scheduler:** in process, like the scorecard and Meta ads check (`startDependencyHealthScheduler` in `src/lib/dependencyHealthJob.ts`), first run a minute after boot. Off when `NODE_ENV=development`.
+- **Storage:** one row per dependency per check in `ai_service_checks` (created by the bootstrap in `src/index.ts`, RLS on), with `limit_remaining`, `limit_unit` and `note` for balances and notes.
+- **Email:** at most one per Pacific day across every dependency (Resend idempotency key `dependency-health-<day>`), listing everything down now, anything running low and anything that recovered since the last email. An outage still going the next day is mentioned again; a recovery after that day's email waits for the next one. Credit, quota, key and domain failures count on the first failed check; outages, rate limits and network errors need two in a row. Recipients: `AI_HEALTH_ALERT_TO`, team (qsbsrollover) addresses only, default `finley@qsbsrollover.com`. Every read the decision depends on goes straight to Postgres and a failed read stops the run.
+- **Outside watcher:** `artifacts/nemat-drop/api/cron/watch-railway.ts`, a Vercel Cron function on the storefront project (`*/10 * * * *` in `artifacts/nemat-drop/vercel.json`). It calls `/api/healthz`, reads the newest Railway check from Supabase, records its own `api` row, and emails through Resend directly when the API doesn't answer twice in a row or has recorded nothing for 30 minutes. It keeps its own once-a-day budget, so a Railway outage is never silenced by an earlier email from the API. Needs `CRON_SECRET`, `SUPABASE_SERVICE_ROLE_KEY` and `RESEND_API_KEY` on Vercel, plus the existing `VITE_API_URL` and `VITE_SUPABASE_URL`.
+- **Admin:** `/admin?view=health` (everything in one list, grouped by what it powers, plus which required secrets are set) and `/admin?view=health-map` (map from storefront to API to services, and what that means for customers). A red banner on the other admin pages and a badge on Health while anything is down. When the API itself doesn't answer, everything behind it shows grey "can't check while the API is down".
+- **Files:** `src/lib/dependencyChecks.ts`, `dependencyLimits.ts`, `dependencyAlerts.ts`, `dependencySummary.ts`, `dependencyHealthJob.ts`, `src/routes/dependencyHealth.ts`; front end `src/lib/dependencyHealth.ts` (the catalog: one line per dependency, including its map position) and `src/pages/adminHealth.tsx`.
 
 ---
 
