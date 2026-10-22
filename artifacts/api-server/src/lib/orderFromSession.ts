@@ -1,5 +1,14 @@
 import type Stripe from "stripe";
 import { attributionColumnsFromMetadata } from "./attribution";
+import { isInternalEmail } from "./metrics";
+
+/**
+ * Backfill skips team test orders (qsbsrollover addresses) we haven't already kept,
+ * so ones deleted from the admin Orders list stay deleted. Kept ones still update.
+ */
+export function skipBackfillSession(session: Stripe.Checkout.Session, existing: Set<string>): boolean {
+  return !existing.has(session.id) && isInternalEmail(session.customer_details?.email);
+}
 
 // Build the orders-table row from an (expanded) Stripe Checkout Session.
 // Shared by the live webhook and the admin backfill so both stay identical.

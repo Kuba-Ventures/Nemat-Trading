@@ -2,7 +2,7 @@ import { Router } from "express";
 import Stripe from "stripe";
 import { db, ordersTable, productsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
-import { orderRowFromSession } from "../lib/orderFromSession";
+import { orderRowFromSession, skipBackfillSession } from "../lib/orderFromSession";
 import { requireAdmin } from "../lib/adminAuth";
 
 const router = Router();
@@ -68,7 +68,7 @@ router.post("/admin/backfill-orders", requireAdmin, async (_req, res) => {
     // Walk every Checkout Session (auto-paginates).
     for await (const session of stripe.checkout.sessions.list({ limit: 100 })) {
       scanned++;
-      if (session.status !== "complete" || session.payment_status !== "paid") {
+      if (session.status !== "complete" || session.payment_status !== "paid" || skipBackfillSession(session, existing)) {
         skipped++;
         continue;
       }
