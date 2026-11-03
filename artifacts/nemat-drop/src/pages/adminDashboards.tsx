@@ -728,7 +728,7 @@ function WeeklyEmailCard({ api }: { api: WeeklyEmailApi }) {
           type="email"
           value={to}
           onChange={(e) => setTo(e.target.value)}
-          placeholder="you@qsbsrollover.com"
+          placeholder="you@example.com"
           className="w-56 rounded-md border border-white/15 bg-transparent px-3 py-1.5 text-sm text-white placeholder:text-gray-600"
         />
         <button

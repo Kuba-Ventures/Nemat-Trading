@@ -2,13 +2,16 @@ import LeftShowcasePanel from "@/components/LeftShowcasePanel";
 import RightContentPanel from "@/components/RightContentPanel";
 import CheckoutPage from "@/pages/checkout";
 import SuccessPage from "@/pages/success";
-import AdminPage from "@/pages/admin";
 import AccountPage from "@/pages/account";
 import PrivacyPage from "@/pages/privacy";
 import TermsPage from "@/pages/terms";
 import SupportPage from "@/pages/support";
 import PastDropsPage from "@/pages/past-drops";
 import HowItWorksPage from "@/pages/how-it-works";
+import { lazy, Suspense } from "react";
+
+// Admin lives in its own chunk so the public bundle never ships admin code.
+const AdminPage = lazy(() => import("@/pages/admin"));
 
 // "How It Works" was removed from the header. The page and its route are kept,
 // so any existing link to /how-it-works still resolves rather than 404s; it just
@@ -72,7 +75,7 @@ function HomePage({ path }: { path: string }) {
 export default function App() {
   const path = window.location.pathname;
 
-  if (path === "/admin") return <AdminPage />;
+  if (path === "/admin") return <Suspense fallback={null}><AdminPage /></Suspense>;
   if (path === "/account") return <AccountPage />;
   if (path === "/checkout") return <CheckoutPage />;
   if (path === "/success") return <SuccessPage />;
