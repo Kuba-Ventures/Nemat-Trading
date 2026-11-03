@@ -1,29 +1,66 @@
 import { useEffect } from "react";
+import { pushDataLayer, type Ecommerce } from "@/lib/analytics";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
+type SessionLookup = {
+  value: number | null;
+  currency?: string;
+  shipping?: number | null;
+  tax?: number | null;
+  items?: { item_id: string; item_name: string; price: number | null; quantity: number }[];
+};
+
+// Builds the GA4 ecommerce purchase entry. The Stripe session id is both
+// ecommerce.transaction_id and event_id: the browser Meta Purchase tag uses
+// event_id as its eventID and the server-side Purchase (Conversions API, sent
+// from the Stripe webhook) uses the same id, so Meta counts each sale once.
+// transaction_id, value and currency are also kept at the top level for the
+// Meta Purchase tag that already reads them there.
+export function purchaseEntry(sessionId: string, d: SessionLookup | null): Record<string, unknown> {
+  const currency = d?.currency ?? "USD";
+  const ecommerce: Ecommerce = {
+    transaction_id: sessionId,
+    currency,
+    ...(d?.value != null ? { value: d.value } : {}),
+    items: (d?.items ?? []).map((i) => ({
+      item_id: i.item_id,
+      item_name: i.item_name,
+      price: i.price ?? 0,
+      quantity: i.quantity,
+    })),
+  };
+  if (d?.shipping != null) ecommerce.shipping = d.shipping;
+  if (d?.tax != null) ecommerce.tax = d.tax;
+  return {
+    event: "purchase",
+    event_id: sessionId,
+    transaction_id: sessionId,
+    currency,
+    ...(d?.value != null ? { value: d.value } : {}),
+    ecommerce,
+  };
+}
+
 export default function SuccessPage() {
-  // Push a `purchase` event into the dataLayer so GTM can fire the Meta
-  // Purchase event with the real order value. Fail-soft by design: if the
-  // lookup fails we still push (without value) so the conversion is counted.
-  // The Stripe session id doubles as the dedup key (eventID) shared with the
-  // Conversions API Gateway's server-side Purchase.
+  // Push a GA4 ecommerce `purchase` into the dataLayer so GTM can fire GA4 and
+  // the Meta Purchase with the real order value. Fail-soft by design: if the
+  // lookup fails we still push (no value, no items) so the conversion counts.
   useEffect(() => {
     const sessionId = new URLSearchParams(window.location.search).get("session_id");
     if (!sessionId) return;
 
     let cancelled = false;
-    const push = (extra: Record<string, unknown>) => {
+    const push = (d: SessionLookup | null) => {
       if (cancelled) return;
-      const w = window as unknown as { dataLayer?: Record<string, unknown>[] };
-      w.dataLayer = w.dataLayer || [];
-      w.dataLayer.push({ event: "purchase", transaction_id: sessionId, currency: "USD", ...extra });
+      pushDataLayer({ ecommerce: null });
+      pushDataLayer(purchaseEntry(sessionId, d));
     };
 
     fetch(`${API_URL}/api/checkout/session/${encodeURIComponent(sessionId)}`)
       .then((r) => (r.ok ? r.json() : null))
-      .then((d) => push(d && d.value != null ? { value: d.value, currency: d.currency ?? "USD" } : {}))
-      .catch(() => push({}));
+      .then((d: SessionLookup | null) => push(d && d.value != null ? d : null))
+      .catch(() => push(null));
 
     return () => {
       cancelled = true;

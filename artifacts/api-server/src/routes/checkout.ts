@@ -189,8 +189,8 @@ router.post("/checkout", async (req, res) => {
 // Minimal, PII-free lookup used by the /success page to fire a Meta Purchase
 // with the real order value. Retrieving from Stripe (rather than our orders
 // table) avoids a race with the async webhook that records the order. Only
-// paid sessions return data, and only the total + currency are exposed, never
-// customer details.
+// paid sessions return data, and only order totals and product line items are
+// exposed, never customer details.
 router.get("/checkout/session/:id", async (req, res) => {
   const stripeKey = process.env.STRIPE_SECRET_KEY;
   if (!stripeKey) {
@@ -204,15 +204,27 @@ router.get("/checkout/session/:id", async (req, res) => {
   }
   try {
     const stripe = new Stripe(stripeKey);
-    const session = await stripe.checkout.sessions.retrieve(id);
+    const session = await stripe.checkout.sessions.retrieve(id, { expand: ["line_items"] });
     if (session.payment_status !== "paid") {
       res.status(404).json({ error: "session not completed" });
       return;
     }
+    // Item details for the GA4 ecommerce purchase event. Product facts only
+    // (id, name, unit price, quantity), never customer details.
+    const productId = session.metadata?.productId ?? "";
+    const items = (session.line_items?.data ?? []).map((li) => ({
+      item_id: productId,
+      item_name: li.description ?? "",
+      price: li.price?.unit_amount != null ? li.price.unit_amount / 100 : null,
+      quantity: li.quantity ?? 1,
+    }));
     res.json({
       value: session.amount_total != null ? session.amount_total / 100 : null,
       currency: (session.currency ?? "usd").toUpperCase(),
       orderId: session.id,
+      shipping: session.shipping_cost?.amount_total != null ? session.shipping_cost.amount_total / 100 : null,
+      tax: session.total_details?.amount_tax != null ? session.total_details.amount_tax / 100 : null,
+      items,
     });
   } catch {
     res.status(404).json({ error: "session not found" });
