@@ -10,10 +10,12 @@ import crypto from "node:crypto";
 // Dedup: event_id is the Stripe session id, the same eventID the GTM tag and
 // the Gateway use, so Meta counts each sale once however many copies arrive.
 //
-// Fail-soft: no-op without META_PIXEL_ID + META_CAPI_ACCESS_TOKEN, and it never
-// throws, so it cannot affect the order the webhook just recorded.
+// Fail-soft: logs and skips without META_PIXEL_ID + META_CAPI_ACCESS_TOKEN
+// (META_CAPI_TOKEN also accepted), and it never throws, so it cannot affect the
+// order the webhook just recorded.
 
-const GRAPH_VERSION = "v21.0";
+// Same default and override as the admin Growth dashboard (metricsSources.ts).
+const graphVersion = () => process.env.META_GRAPH_VERSION || "v23.0";
 const TIMEOUT_MS = 5000;
 
 function sha256(value: string | undefined | null): string | undefined {
@@ -104,12 +106,17 @@ export function buildPurchasePayload(input: PurchaseEventInput, testEventCode?: 
 
 export async function sendPurchaseEvent(input: PurchaseEventInput): Promise<void> {
   const pixelId = process.env.META_PIXEL_ID;
-  const token = process.env.META_CAPI_ACCESS_TOKEN;
-  if (!pixelId || !token) return;
+  const token = process.env.META_CAPI_ACCESS_TOKEN || process.env.META_CAPI_TOKEN;
+  if (!pixelId || !token) {
+    console.warn(
+      `[meta-capi] skipped Purchase for ${input.eventId}: META_PIXEL_ID or META_CAPI_ACCESS_TOKEN not set`,
+    );
+    return;
+  }
 
   const payload = buildPurchasePayload(input, process.env.META_TEST_EVENT_CODE || undefined);
   try {
-    const res = await fetch(`https://graph.facebook.com/${GRAPH_VERSION}/${pixelId}/events`, {
+    const res = await fetch(`https://graph.facebook.com/${graphVersion()}/${pixelId}/events`, {
       method: "POST",
       headers: { "Content-Type": "application/json", Authorization: `Bearer ${token}` },
       body: JSON.stringify(payload),

@@ -49,8 +49,8 @@ function notify(p: DbProduct | null) {
   listeners.forEach((fn) => fn(p));
 }
 
-async function fetchActive() {
-  if (!API_URL) return;
+async function fetchActive(): Promise<DbProduct | null> {
+  if (!API_URL) return cached;
   try {
     const res = await fetch(`${API_URL}/api/products`);
     const data = await res.json();
@@ -58,10 +58,13 @@ async function fetchActive() {
   } catch {
     // silently keep whatever is in cache
   }
+  return cached;
 }
 
-// Kick off the fetch once at module load
-fetchActive();
+// Kick off the fetch once at module load. Resolves with the live product once
+// the API answers (or the cached one if it fails), so one-off work like the
+// view_item event reads the fresh product rather than a stale cached copy.
+export const activeProductReady: Promise<DbProduct | null> = fetchActive();
 
 export function useActiveProduct() {
   const [product, setProduct] = useState<DbProduct | null>(cached);

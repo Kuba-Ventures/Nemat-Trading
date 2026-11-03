@@ -8,7 +8,10 @@ import TermsPage from "@/pages/terms";
 import SupportPage from "@/pages/support";
 import PastDropsPage from "@/pages/past-drops";
 import HowItWorksPage from "@/pages/how-it-works";
-import { lazy, Suspense } from "react";
+import { lazy, Suspense, useEffect } from "react";
+import { activeProductReady } from "@/hooks/useActiveProduct";
+import { product as staticProduct } from "@/data/product";
+import { pushEcommerce, toMoney } from "@/lib/analytics";
 
 // Admin lives in its own chunk so the public bundle never ships admin code.
 const AdminPage = lazy(() => import("@/pages/admin"));
@@ -20,7 +23,33 @@ const NAV_LINKS = [
   { href: "/past-drops", label: "Past Drops" },
 ] as const;
 
+// view_item for the drop page, once per page load, with the live product (the
+// same id, title and price PurchaseBar sends to checkout).
+let viewItemSent = false;
+function useViewItem() {
+  useEffect(() => {
+    if (viewItemSent) return;
+    viewItemSent = true;
+    activeProductReady.then((p) => {
+      const price = p ? p.price / 100 : staticProduct.dropPrice;
+      pushEcommerce("view_item", {
+        currency: "USD",
+        value: toMoney(price),
+        items: [
+          {
+            item_id: String(p?.id ?? 1),
+            item_name: p?.title ?? staticProduct.title,
+            price: toMoney(price),
+            quantity: 1,
+          },
+        ],
+      });
+    });
+  }, []);
+}
+
 function HomePage({ path }: { path: string }) {
+  useViewItem();
   return (
     <div className="min-h-screen md:h-screen md:overflow-hidden flex flex-col bg-black">
       <header className="w-full flex items-center justify-between gap-6 h-[72px] px-[26px] border-b border-white/[0.06] shrink-0 bg-black relative z-20">

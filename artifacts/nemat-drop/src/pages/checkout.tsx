@@ -2,6 +2,7 @@ import { useMemo, useState } from "react";
 import { product } from "@/data/product";
 import { useActiveProduct } from "@/hooks/useActiveProduct";
 import { getAttribution } from "@/lib/attribution";
+import { pushEcommerceThen, toMoney } from "@/lib/analytics";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -143,7 +144,28 @@ export default function CheckoutPage() {
       let data: any;
       try { data = JSON.parse(text); } catch { throw new Error(`Server error (${res.status}): ${text.slice(0, 200)}`); }
       if (!res.ok) throw new Error(data.error ?? "Checkout failed");
-      window.location.href = data.url;
+      // begin_checkout fires only once Stripe has a session for this order, and
+      // the redirect waits for GTM (at most 800 ms) so the tags can fire first.
+      const url: string = data.url;
+      pushEcommerceThen(
+        "begin_checkout",
+        {
+          currency: "USD",
+          value: toMoney((itemsCents - discountCents) / 100),
+          ...(appliedPromo ? { coupon: appliedPromo.code } : {}),
+          items: [
+            {
+              item_id: String(productId),
+              item_name: dbProduct?.title ?? product.title,
+              price: toMoney(unitCents / 100),
+              quantity: qty,
+            },
+          ],
+        },
+        () => {
+          window.location.href = url;
+        },
+      );
     } catch (err: any) {
       setError(err.message ?? "Something went wrong");
       setLoading(false);
