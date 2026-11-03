@@ -7,7 +7,7 @@ interface ComingSoonProps {
 
 /**
  * Placeholder shell for routes that are linked in the header but not built yet
- * (/past-drops, /how-it-works). Reuses the sub-page header lockup so it reads as
+ * (/past-drops). Reuses the sub-page header lockup so it reads as
  * an unfinished section of the site rather than a broken link or a 404.
  */
 export default function ComingSoon({ title, blurb }: ComingSoonProps) {
