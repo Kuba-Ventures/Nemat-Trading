@@ -150,6 +150,35 @@ export async function buyLabelOnce(
   return label;
 }
 
+/** Tracking saved when the order was marked shipped from Pirate Ship, if any. */
+export async function shippedTracking(sessionId: string): Promise<{ trackingNumber: string; trackingUrl: string } | null> {
+  const [row] = await db
+    .select({ trackingNumber: ordersTable.trackingNumber, trackingUrl: ordersTable.trackingUrl })
+    .from(ordersTable)
+    .where(eq(ordersTable.stripeSessionId, sessionId));
+  return row?.trackingNumber ? { trackingNumber: row.trackingNumber, trackingUrl: row.trackingUrl ?? "" } : null;
+}
+
+/**
+ * Records a label bought in Pirate Ship. Claims the order the same way
+ * buyLabelOnce does, so it only works once and blocks any other label for it.
+ */
+export async function markShippedOnce(
+  sessionId: string,
+  tracking: { trackingNumber: string; trackingUrl: string },
+): Promise<boolean> {
+  const claimed = await db
+    .update(ordersTable)
+    .set({
+      shippoTransactionId: SHIPPED_ELSEWHERE,
+      trackingNumber: tracking.trackingNumber,
+      trackingUrl: tracking.trackingUrl,
+    })
+    .where(and(eq(ordersTable.stripeSessionId, sessionId), isNull(ordersTable.shippoTransactionId)))
+    .returning({ id: ordersTable.id });
+  return claimed.length > 0;
+}
+
 /** Label page(s) then the packing slip, ready to print. */
 export async function printablePdf(o: LabelOrder, label: SavedLabel | null): Promise<Uint8Array | null> {
   return buildShippingPdf(

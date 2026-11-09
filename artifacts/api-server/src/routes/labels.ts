@@ -4,23 +4,28 @@ import { verifyLabelToken } from "../lib/labelLink";
 import {
   buyLabelOnce,
   labelOrderFromSession,
+  markShippedOnce,
   printablePdf,
   savedLabel,
+  shippedTracking,
   type LabelOrder,
   type SavedLabel,
 } from "../lib/fulfilment";
+import { carrierFor, normalizeTracking, trackingUrlFor } from "../lib/tracking";
+import { esc, pageHtml, shipBody } from "../lib/labelPage";
 
-// The page behind the "Buy label" button in the sales@ order email.
-//   GET  /labels/:id?t=     shows the order and a Buy button (never buys: mail
-//                           scanners open links, so a GET must be safe)
-//   POST /labels/:id        buys the label once, then shows Print
-//   GET  /labels/:id/pdf?t= label + packing slip, or the slip alone before purchase
+// The page behind the "Ship with Pirate Ship" button in the sales@ order email.
+// Pirate Ship has no API, so the client copies the address into Pirate Ship,
+// buys the label there, and pastes the tracking number back here.
+//   GET  /labels/:id?t=         shows the order, Copy address + open Pirate Ship,
+//                               and the tracking form (a GET never changes anything:
+//                               mail scanners open links)
+//   POST /labels/:id/shipped    saves the tracking number once and marks the order shipped
+//   POST /labels/:id            legacy one-click label purchase, no longer linked from the page
+//   GET  /labels/:id/pdf?t=     packing slip (with the label, for orders that have one)
+
 
 const router = Router();
-
-function esc(s: string): string {
-  return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
-}
 
 function page(res: Response, status: number, body: string) {
   res
@@ -28,16 +33,7 @@ function page(res: Response, status: number, body: string) {
     .set("Cache-Control", "no-store")
     .set("X-Robots-Tag", "noindex")
     .type("html")
-    .send(
-      `<!doctype html><html lang="en"><head><meta charset="utf-8">` +
-        `<meta name="viewport" content="width=device-width,initial-scale=1"><title>Shipping label</title>` +
-        `<style>body{font:16px/1.5 -apple-system,Segoe UI,Roboto,sans-serif;max-width:480px;margin:32px auto;padding:0 16px;color:#111}` +
-        `h1{font-size:22px;margin:0 0 4px}.muted{color:#6b7280;font-size:14px}.box{border:1px solid #e5e7eb;border-radius:8px;padding:14px 16px;margin:18px 0}` +
-        `.btn{display:block;width:100%;box-sizing:border-box;text-align:center;background:#111;color:#fff;border:0;border-radius:6px;padding:14px;font:600 16px sans-serif;text-decoration:none;cursor:pointer;margin-top:10px}` +
-        `.btn.alt{background:#fff;color:#111;border:1px solid #111}.err{color:#b91c1c;font-weight:600}</style></head><body>` +
-        body +
-        `</body></html>`,
-    );
+    .send(pageHtml(body));
 }
 
 async function loadOrder(id: string): Promise<LabelOrder | null> {
@@ -72,7 +68,7 @@ function boughtBody(o: LabelOrder, l: SavedLabel, t: string, justBought: boolean
     `<br>Tracking ${esc(l.trackingNumber)}${justBought ? ". The customer has been emailed." : ""}</p>` +
     orderBox(o) +
     `<a class="btn" href="${pdf}" target="_blank">Print label + packing slip</a>` +
-    `<p class="muted" style="margin-top:18px">Cancelled order? Void the label in Shippo within 30 days for a postage refund.</p>`
+    `<p class="muted" style="margin-top:18px">Cancelled order? Ask Finley to void the label within 30 days for a postage refund.</p>`
   );
 }
 
@@ -85,26 +81,37 @@ router.get("/labels/:id", async (req, res) => {
 
   const saved = await savedLabel(id);
   if (saved === "pending") return page(res, 200, `<h1>Buying the label&hellip;</h1><p>Refresh in a few seconds.</p>`);
-  if (saved === "shipped") {
-    return page(
-      res,
-      200,
-      `<h1>Already shipped</h1><p class="muted">This order went out without a Shippo label, so there is no label to buy.</p>` +
-        orderBox(o) +
-        `<a class="btn alt" href="/api/labels/${encodeURIComponent(id)}/pdf?t=${t}" target="_blank">Packing slip only</a>`,
-    );
-  }
+  if (saved === "shipped") return page(res, 200, await shippedBody(o, t, req.query.shipped === "1"));
   if (saved) return page(res, 200, boughtBody(o, saved, t, req.query.bought === "1"));
+  return page(res, 200, shipBody(o, t, req.query.err === "tracking"));
+});
 
-  return page(
-    res,
-    200,
-    `<h1>Buy shipping label</h1><p class="muted">One USPS label, charged to the Shippo account. The customer gets their tracking email.</p>` +
-      orderBox(o) +
-      `<form method="post" action="/api/labels/${encodeURIComponent(id)}" onsubmit="this.b.disabled=true;this.b.textContent='Buying…'">` +
-      `<input type="hidden" name="t" value="${t}"><button class="btn" name="b">Buy label</button></form>` +
-      `<a class="btn alt" href="/api/labels/${encodeURIComponent(id)}/pdf?t=${t}" target="_blank">Packing slip only</a>`,
+async function shippedBody(o: LabelOrder, t: string, justShipped: boolean): Promise<string> {
+  const tracking = await shippedTracking(o.sessionId);
+  return (
+    `<h1>${justShipped ? "Marked shipped" : "Already shipped"}</h1>` +
+    (tracking
+      ? `<p class="muted">Tracking ${tracking.trackingUrl ? `<a href="${esc(tracking.trackingUrl)}" target="_blank" rel="noopener">${esc(tracking.trackingNumber)}</a>` : esc(tracking.trackingNumber)}</p>`
+      : `<p class="muted">This order is marked as shipped.</p>`) +
+    orderBox(o) +
+    `<a class="btn alt" href="/api/labels/${encodeURIComponent(o.sessionId)}/pdf?t=${t}" target="_blank">Packing slip</a>`
   );
+}
+
+router.post("/labels/:id/shipped", async (req, res) => {
+  const { id } = req.params;
+  const t = String(req.body?.t ?? "");
+  if (!verifyLabelToken(id, t)) return page(res, 403, `<h1>Link not valid</h1>`);
+  const back = `/api/labels/${encodeURIComponent(id)}?t=${t}`;
+  const trackingNumber = normalizeTracking(req.body?.tracking);
+  if (!trackingNumber) return res.redirect(303, `${back}&err=tracking`);
+  const o = await loadOrder(id);
+  if (!o) return page(res, 404, `<h1>Order not found</h1>`);
+
+  const saved = await markShippedOnce(id, { trackingNumber, trackingUrl: trackingUrlFor(trackingNumber) });
+  if (saved) console.log(`[label] ${id} marked shipped via Pirate Ship (${carrierFor(trackingNumber)})`);
+  // Post/redirect/get. If it was already shipped the page just says so.
+  res.redirect(303, saved ? `${back}&shipped=1` : back);
 });
 
 router.post("/labels/:id", async (req, res) => {
@@ -120,7 +127,7 @@ router.post("/labels/:id", async (req, res) => {
       res,
       502,
       `<h1>Label not bought</h1><p class="err">${esc(result.reason)}</p>` +
-        `<p>Nothing was charged. Fix the problem and try again, or buy it by hand in Shippo.</p>` +
+        `<p>Nothing was charged. Fix the problem and try again.</p>` +
         `<a class="btn" href="/api/labels/${encodeURIComponent(id)}?t=${t}">Back</a>`,
     );
   }

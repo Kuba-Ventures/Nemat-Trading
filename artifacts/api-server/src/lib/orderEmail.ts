@@ -63,7 +63,7 @@ function isDiscounted(o: OrderEmailInput): boolean {
   return !!o.discount && Number(o.discount) > 0;
 }
 
-// labelUrl: the signed "Buy label" page for this order (routes/labels.ts).
+// labelUrl: the signed "Ship with Pirate Ship" page for this order (routes/labels.ts).
 export function buildOrderEmail(o: OrderEmailInput, labelUrl?: string | null): OrderEmail {
   // "City, ST 12345", tolerant of any part missing.
   const locality = [o.city, o.state].filter(Boolean).join(", ");
@@ -84,7 +84,7 @@ export function buildOrderEmail(o: OrderEmailInput, labelUrl?: string | null): O
   const subject = `New order: ${item}${qty !== "1" ? ` ×${qty}` : ""} · ${total}`;
 
   const text = [
-    ...(labelUrl ? ["SHIPPING LABEL", `  Buy label and print: ${labelUrl}`, ""] : []),
+    ...(labelUrl ? ["SHIPPING", `  Ship with Pirate Ship: ${labelUrl}`, ""] : []),
     "PACKING LIST",
     `  ${item}  ×${qty}`,
     "",
@@ -110,8 +110,8 @@ export function buildOrderEmail(o: OrderEmailInput, labelUrl?: string | null): O
     `<div style="font-family:-apple-system,Segoe UI,Roboto,sans-serif;max-width:520px;background:#ffffff;color:#111;padding:8px 4px">`,
     labelUrl
       ? `<p style="margin:0 0 20px"><a href="${esc(labelUrl)}" style="display:inline-block;background:#111;color:#fff;` +
-        `font:600 15px sans-serif;padding:12px 22px;border-radius:6px;text-decoration:none">Buy label &amp; print &rarr;</a>` +
-        `<br><span style="font-size:13px;color:#6b7280">One click buys the USPS label and emails the customer tracking. ` +
+        `font:600 15px sans-serif;padding:12px 22px;border-radius:6px;text-decoration:none">Ship with Pirate Ship &rarr;</a>` +
+        `<br><span style="font-size:13px;color:#6b7280">Copy the address into Pirate Ship, then paste the tracking number back. ` +
         `The packing slip is attached.</span></p>`
       : "",
     section("Packing list", `<strong>${esc(item)}</strong> &times;${esc(qty)}`),

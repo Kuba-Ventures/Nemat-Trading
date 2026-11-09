@@ -138,15 +138,15 @@ test("no discount line when no promotion code was used", () => {
   }
 });
 
-test("sales email carries the Buy label link when there is one", async () => {
+test("sales email carries the Ship with Pirate Ship link when there is one", async () => {
   const { buildTrackingEmail } = await import("./orderEmail");
   const url = "https://api.example.com/api/labels/cs_test_123?t=abc";
   const withLink = buildOrderEmail(ORDER, url);
-  assert.match(withLink.text, /^SHIPPING LABEL\n  Buy label and print: https:\/\/api\.example\.com/);
-  assert.ok(withLink.html.includes("Buy label &amp; print"));
+  assert.match(withLink.text, /^SHIPPING\n  Ship with Pirate Ship: https:\/\/api\.example\.com/);
+  assert.ok(withLink.html.includes("Ship with Pirate Ship &rarr;"));
   assert.ok(withLink.html.includes(url));
-  assert.ok(!buildOrderEmail(ORDER).text.includes("SHIPPING LABEL"));
-  assert.ok(!buildOrderEmail(ORDER, null).html.includes("Buy label"));
+  assert.ok(!buildOrderEmail(ORDER).text.includes("Pirate Ship"));
+  assert.ok(!buildOrderEmail(ORDER, null).html.includes("Pirate Ship"));
 
   const t = buildTrackingEmail(ORDER, {
     service: "USPS Ground Advantage",
