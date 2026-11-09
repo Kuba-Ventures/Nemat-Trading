@@ -6,7 +6,7 @@ import { orderRowFromSession, skipBackfillSession } from "../lib/orderFromSessio
 import { requireAdmin } from "../lib/adminAuth";
 import {
   SHIPPED_ELSEWHERE,
-  emailTrackingOnce,
+  sendStatusEmails,
   markShippedOnce,
   markShippedUntracked,
   refreshStaleTracking,
@@ -71,6 +71,8 @@ router.get("/admin/orders", requireAdmin, async (_req, res) => {
         deliveredAt: o.deliveredAt?.toISOString() ?? null,
         checkedAt: o.trackingCheckedAt?.toISOString() ?? null,
         emailedAt: o.trackingEmailedAt?.toISOString() ?? null,
+        shippedEmailedAt: o.shippedEmailedAt?.toISOString() ?? null,
+        deliveredEmailedAt: o.deliveredEmailedAt?.toISOString() ?? null,
       },
     };
     });
@@ -98,7 +100,10 @@ router.post("/admin/orders/:sessionId/tracking", requireAdmin, async (req, res) 
       return;
     }
     await refreshTracking(sessionId);
-    const emailed = req.body?.emailCustomer === false ? false : await emailTrackingOnce(sessionId);
+    // Unchecked: skip the email for the current stage; later stages still go out.
+    const skip = req.body?.emailCustomer === false;
+    const sent = await sendStatusEmails(sessionId, { skip });
+    const emailed = !skip && sent !== null;
     res.json({ ok: true, emailed });
   } catch (err) {
     console.error("[admin/orders] saving tracking failed:", err);
@@ -124,7 +129,7 @@ router.post("/admin/orders/:sessionId/shipped-untracked", requireAdmin, async (r
 // Admin: email the customer their tracking (if it hasn't gone out yet).
 router.post("/admin/orders/:sessionId/email-tracking", requireAdmin, async (req, res) => {
   try {
-    const sent = await emailTrackingOnce(String(req.params.sessionId));
+    const sent = (await sendStatusEmails(String(req.params.sessionId))) !== null;
     res.json({ ok: true, sent });
   } catch (err) {
     console.error("[admin/orders] tracking email failed:", err);

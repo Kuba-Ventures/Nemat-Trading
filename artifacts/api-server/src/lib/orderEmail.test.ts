@@ -139,7 +139,6 @@ test("no discount line when no promotion code was used", () => {
 });
 
 test("sales email carries the Ship with Pirate Ship link when there is one", async () => {
-  const { buildTrackingEmail } = await import("./orderEmail");
   const url = "https://api.example.com/api/labels/cs_test_123?t=abc";
   const withLink = buildOrderEmail(ORDER, url);
   assert.match(withLink.text, /^SHIPPING\n  Ship with Pirate Ship: https:\/\/api\.example\.com/);
@@ -147,12 +146,52 @@ test("sales email carries the Ship with Pirate Ship link when there is one", asy
   assert.ok(withLink.html.includes(url));
   assert.ok(!buildOrderEmail(ORDER).text.includes("Pirate Ship"));
   assert.ok(!buildOrderEmail(ORDER, null).html.includes("Pirate Ship"));
+});
 
-  const t = buildTrackingEmail(ORDER, {
-    service: "USPS Ground Advantage",
-    trackingNumber: "9400100000000000000000",
-    trackingUrl: "https://tools.usps.com/x",
-  });
-  assert.match(t.subject, /9400100000000000000000/);
-  assert.ok(t.html.includes("TRACK PACKAGE"));
+test("status emails: Packed, Shipped, Delivered fill the progress bar and link the tracking number", async () => {
+  const { buildStatusEmail } = await import("./orderEmail");
+  const pack = {
+    title: "Teenage Mutant Ninja Turtles",
+    shortTitle: "TMNT Booster Pack",
+    subtitle: "",
+    imageUrl: "https://img.example.com/pack.png",
+    confirmHeadline: "Cowabunga",
+    accentColor: "#66ff66",
+  };
+  const t = {
+    carrier: "USPS",
+    trackingNumber: "9400111899223344554412",
+    trackingUrl: "https://tools.usps.com/go/TrackConfirmAction?tLabels=9400111899223344554412",
+    shippedAt: new Date("2026-11-10T18:00:00Z"),
+    deliveredAt: new Date("2026-11-14T20:00:00Z"),
+    location: "Memphis, TN",
+    statusDetail: "Delivered, Front Door/Porch",
+  };
+  const order = { sessionId: "cs_live_abcdefU0FFPZRK", quantity: 1, item: "" };
+  const lit = (html: string) => (html.match(/border-top:3px solid #66ff66/g) ?? []).length;
+
+  const packed = buildStatusEmail("packed", order, pack, t);
+  assert.equal(packed.subject, "Packed: your TMNT Booster pack has tracking");
+  assert.equal(lit(packed.html), 2);
+  // One line, and the number is a link to the carrier's tracking page.
+  assert.match(packed.html, /<a href="https:\/\/tools\.usps\.com[^"]*"[^>]*white-space:nowrap[^>]*>9400111899223344554412<\/a>/);
+  assert.ok(packed.html.includes("TRACK PACKAGE"));
+  assert.ok(packed.html.includes("https://img.example.com/pack.png"));
+
+  const shipped = buildStatusEmail("shipped", { ...order, quantity: 2 }, pack, t);
+  assert.equal(shipped.subject, "Shipped: your TMNT Booster packs are on the move");
+  assert.equal(lit(shipped.html), 3);
+  assert.ok(shipped.text.includes("First scanned by USPS on Nov 10. Last seen in Memphis, TN."));
+
+  const delivered = buildStatusEmail("delivered", order, pack, t);
+  assert.equal(delivered.subject, "Delivered: time to rip your TMNT Booster pack");
+  assert.equal(lit(delivered.html), 4);
+  assert.ok(delivered.html.includes("Delivered Nov 14 · Front Door/Porch"));
+  assert.ok(delivered.html.includes("TOPDECK10"));
+  assert.ok(delivered.html.includes("utm_campaign=delivered"));
+
+  // Confirmation now shows the same four steps, first one lit.
+  const conf = buildConfirmationEmail(ORDER, pack);
+  assert.equal(lit(conf.html), 1);
+  assert.ok(conf.html.includes(">Delivered</td>"));
 });

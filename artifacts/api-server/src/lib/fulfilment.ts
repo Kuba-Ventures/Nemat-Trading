@@ -1,11 +1,11 @@
 import type Stripe from "stripe";
 import { and, eq, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
-import { db, ordersTable } from "@workspace/db";
+import { db, ordersTable, productsTable } from "@workspace/db";
 import { SHIPPO_API, buyLabel, type LabelResult, type ShipTo } from "./shippo";
-import { parseShippoTrack, shippoCarrier } from "./shipStatus";
+import { emailStage, parseShippoTrack, shippoCarrier } from "./shipStatus";
 import { carrierFor } from "./tracking";
 import { buildShippingPdf, fetchLabelPdf, type SlipInput } from "./packingSlip";
-import { sendTrackingEmail } from "./orderEmail";
+import { sendStatusEmail, type ConfirmationPack, type StatusStage } from "./orderEmail";
 
 // Click-to-buy labels (issue #113, revised 2026-10-13): the sales@ email carries
 // a "Buy label" link; one click buys the label, emails the customer tracking and
@@ -142,7 +142,6 @@ export async function buyLabelOnce(
         labelUrl: label.labelUrl,
         labelCostCents: label.costCents,
         labelCreatedAt: new Date(),
-        trackingEmailedAt: new Date(),
       })
       .where(eq(ordersTable.stripeSessionId, o.sessionId));
   } catch (err) {
@@ -150,7 +149,7 @@ export async function buyLabelOnce(
     console.error(`[label] BOUGHT ${label.transactionId} for ${o.sessionId} but saving failed:`, err);
   }
 
-  await sendTrackingEmail({ sessionId: o.sessionId, customerEmail: o.to.email }, label);
+  await sendStatusEmails(o.sessionId);
   return label;
 }
 
@@ -237,40 +236,73 @@ export async function refreshTracking(sessionId: string): Promise<void> {
   }
 }
 
-/** Emails the customer their tracking once per order. Returns whether it sent. */
-export async function emailTrackingOnce(sessionId: string): Promise<boolean> {
+async function packForProduct(productId: number | null): Promise<ConfirmationPack | null> {
+  if (!productId) return null;
+  try {
+    const [p] = await db
+      .select({
+        title: productsTable.title,
+        shortTitle: productsTable.shortTitle,
+        subtitle: productsTable.subtitle,
+        imageUrl: productsTable.imageUrl,
+        confirmHeadline: productsTable.confirmHeadline,
+        accentColor: productsTable.accentColor,
+      })
+      .from(productsTable)
+      .where(eq(productsTable.id, productId));
+    return p ?? null;
+  } catch {
+    return null;
+  }
+}
+
+const STAGE_ORDER: StatusStage[] = ["packed", "shipped", "delivered"];
+const STAGE_COLUMN = {
+  packed: ordersTable.trackingEmailedAt,
+  shipped: ordersTable.shippedEmailedAt,
+  delivered: ordersTable.deliveredEmailedAt,
+} as const;
+const STAGE_FIELD = { packed: "trackingEmailedAt", shipped: "shippedEmailedAt", delivered: "deliveredEmailedAt" } as const;
+
+/**
+ * Sends the customer the email for the furthest stage their order has reached
+ * (Packed, Shipped or Delivered), once. Earlier stages are marked as covered, so
+ * tracking added late sends one email, not three. Returns the stage sent, if any.
+ */
+export async function sendStatusEmails(sessionId: string, opts: { skip?: boolean } = {}): Promise<StatusStage | null> {
+  const [row] = await db.select().from(ordersTable).where(eq(ordersTable.stripeSessionId, sessionId));
+  if (!row) return null;
+  const stage = emailStage(row);
+  if (!stage || row[STAGE_FIELD[stage]]) return null;
+
+  const now = new Date();
+  const covered = STAGE_ORDER.slice(0, STAGE_ORDER.indexOf(stage));
   const claimed = await db
     .update(ordersTable)
-    .set({ trackingEmailedAt: new Date() })
-    .where(
-      and(
-        eq(ordersTable.stripeSessionId, sessionId),
-        isNull(ordersTable.trackingEmailedAt),
-        isNotNull(ordersTable.trackingNumber),
-      ),
-    )
-    .returning({
-      email: ordersTable.customerEmail,
-      trackingNumber: ordersTable.trackingNumber,
-      trackingUrl: ordersTable.trackingUrl,
-    });
-  const row = claimed[0];
-  if (!row?.trackingNumber) return false;
-  try {
-    await sendTrackingEmail(
-      { sessionId, customerEmail: row.email },
-      { service: carrierFor(row.trackingNumber), trackingNumber: row.trackingNumber, trackingUrl: row.trackingUrl ?? "" },
-    );
-    return true;
-  } catch (err) {
-    console.error(`[tracking] email failed for ${sessionId}:`, err);
-    await db
-      .update(ordersTable)
-      .set({ trackingEmailedAt: null })
-      .where(eq(ordersTable.stripeSessionId, sessionId))
-      .catch(() => {});
-    return false;
-  }
+    .set({
+      [STAGE_FIELD[stage]]: now,
+      ...Object.fromEntries(covered.map((c) => [STAGE_FIELD[c], sql`COALESCE(${STAGE_COLUMN[c]}, ${now})`])),
+    })
+    .where(and(eq(ordersTable.stripeSessionId, sessionId), isNull(STAGE_COLUMN[stage])))
+    .returning({ id: ordersTable.id });
+  if (claimed.length === 0 || opts.skip) return null;
+
+  await sendStatusEmail(
+    stage,
+    row.customerEmail,
+    { sessionId, quantity: row.quantity, item: "" },
+    await packForProduct(row.productId),
+    {
+      carrier: carrierFor(row.trackingNumber!),
+      trackingNumber: row.trackingNumber!,
+      trackingUrl: row.trackingUrl ?? "",
+      shippedAt: row.shippedAt,
+      deliveredAt: row.deliveredAt,
+      location: row.trackingLocation,
+      statusDetail: row.trackingStatusDetail,
+    },
+  );
+  return stage;
 }
 
 const REFRESH_AFTER_MS = 3 * 60 * 60 * 1000;
@@ -287,7 +319,10 @@ export async function refreshStaleTracking(now = new Date()): Promise<number> {
         or(isNull(ordersTable.trackingCheckedAt), lt(ordersTable.trackingCheckedAt, new Date(now.getTime() - REFRESH_AFTER_MS))),
       ),
     );
-  for (const r of rows) await refreshTracking(r.sessionId);
+  for (const r of rows) {
+    await refreshTracking(r.sessionId);
+    await sendStatusEmails(r.sessionId).catch((err) => console.error(`[tracking] status email failed for ${r.sessionId}:`, err));
+  }
   return rows.length;
 }
 

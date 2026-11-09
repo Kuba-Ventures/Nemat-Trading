@@ -40,6 +40,8 @@ export const ordersTable = pgTable("orders", {
   trackingLocation: text("tracking_location"),
   trackingCheckedAt: timestamp("tracking_checked_at"),
   trackingEmailedAt: timestamp("tracking_emailed_at"),
+  shippedEmailedAt: timestamp("shipped_emailed_at"),
+  deliveredEmailedAt: timestamp("delivered_emailed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

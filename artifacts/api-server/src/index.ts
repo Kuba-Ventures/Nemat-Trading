@@ -91,6 +91,8 @@ async function migrate() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_location TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_checked_at TIMESTAMP;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_emailed_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_emailed_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_emailed_at TIMESTAMP;
 
     CREATE TABLE IF NOT EXISTS subscribers (
       id SERIAL PRIMARY KEY,

@@ -103,3 +103,12 @@ export function shipTiming(r: ShipRow, now: Date): { stage: ShipStage; days: num
 export function shippoCarrier(tracking: string): "ups" | "usps" {
   return /^1Z/i.test(tracking) ? "ups" : "usps";
 }
+
+/** The furthest stage an order has reached, from its tracking. */
+export function emailStage(r: { trackingNumber: string | null; trackingStatus: string | null; shippedAt: Date | null; deliveredAt: Date | null }): "packed" | "shipped" | "delivered" | null {
+  if (!r.trackingNumber) return null;
+  if (r.trackingStatus === "DELIVERED" || r.deliveredAt) return "delivered";
+  if (r.shippedAt || r.trackingStatus === "TRANSIT") return "shipped";
+  return "packed";
+}
+

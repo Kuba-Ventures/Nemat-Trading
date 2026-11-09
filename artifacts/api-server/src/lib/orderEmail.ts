@@ -246,10 +246,52 @@ function absoluteUrl(url: string): string {
   return url.startsWith("/") ? SITE_URL + url : url;
 }
 
+// "TMNT Booster Pack" reads as "2 TMNT Booster packs", never "Pack packs".
+function packName(pack: ConfirmationPack | null, item: string | undefined): string {
+  return (pack?.shortTitle || pack?.title || item || "").replace(/\s+packs?$/i, "").trim();
+}
+
+const STEPS = ["Confirmed", "Packed", "Shipped", "Delivered"];
+
+// Dark by design. Gmail drops the gradient and the tilt and shows flat black
+// with an upright pack; Apple Mail renders both.
+function emailShellStart(accent: string): string {
+  return (
+    `<div style="margin:0;background:#000000">` +
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000000"><tr><td align="center">` +
+    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="max-width:480px;background:#000000;` +
+    `background-image:radial-gradient(circle at 50% 22%,${glowOf(accent)} 0,#000000 55%)">` +
+    `<tr><td align="center" style="padding:28px 0 0">` +
+    `<img src="${SITE_URL}/favicon.png" width="28" height="28" alt="" style="vertical-align:middle">` +
+    ` <span style="vertical-align:middle;display:inline-block;text-align:left">` +
+    `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>` +
+    `<span style="display:block;font:700 8px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a;margin-top:3px">TRADING CARDS</span>` +
+    `</span></td></tr>`
+  );
+}
+
+function packImageRow(pack: ConfirmationPack | null): string {
+  return pack?.imageUrl
+    ? `<tr><td align="center" style="padding:6px 0 0"><img src="${esc(absoluteUrl(pack.imageUrl))}" width="220" ` +
+        `alt="${esc(pack.title)}" style="display:block;max-width:220px;height:auto;transform:rotate(-6deg)"></td></tr>`
+    : "";
+}
+
+/** Confirmed → Packed → Shipped → Delivered, with the first `lit` steps in the accent. */
+export function progressBar(accent: string, lit: number): string {
+  const step = (t: string, on: boolean) =>
+    `<td style="border-top:3px solid ${on ? accent : "#333333"};color:${on ? accent : "#666666"};padding-top:8px">${t}</td>`;
+  return (
+    `<tr><td style="padding:24px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" ` +
+    `style="font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.12em;text-transform:uppercase;text-align:center"><tr>` +
+    STEPS.map((t, i) => step(t, i < lit)).join(`<td width="4"></td>`) +
+    `</tr></table></td></tr>`
+  );
+}
+
 export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPack | null): OrderEmail {
   const qty = o.quantity || 1;
-  // "TMNT Booster Pack" reads as "2 TMNT Booster packs", never "Pack packs".
-  const name = (pack?.shortTitle || pack?.title || o.item || "").replace(/\s+packs?$/i, "").trim();
+  const name = packName(pack, o.item);
   const opener = pack?.confirmHeadline?.trim() || DEFAULT_HEADLINE;
   const claim = name ? `${qty} ${name} ${qty === 1 ? "pack is" : "packs are"} yours.` : "Your order is in.";
   const accent = accentOf(pack);
@@ -285,34 +327,15 @@ export function buildConfirmationEmail(o: OrderEmailInput, pack: ConfirmationPac
     `font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af">${esc(t)}</td></tr>`;
   const line = (l: string, v: string) =>
     `<tr><td style="color:#9ca3af">${esc(l)}</td><td align="right">${esc(v)}</td></tr>`;
-  const step = (t: string, on: boolean) =>
-    `<td style="border-top:3px solid ${on ? accent : "#333333"};color:${on ? accent : "#666666"};padding-top:8px">${t}</td>`;
   const totalCell = "padding-top:8px;border-top:1px solid #333333;font-weight:700";
 
-  // Dark by design. Gmail drops the gradient and the tilt and shows flat black
-  // with an upright pack; Apple Mail renders both.
   const html = [
-    `<div style="margin:0;background:#000000">`,
-    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000000"><tr><td align="center">`,
-    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="max-width:480px;background:#000000;` +
-      `background-image:radial-gradient(circle at 50% 22%,${glowOf(accent)} 0,#000000 55%)">`,
-    `<tr><td align="center" style="padding:28px 0 0">` +
-      `<img src="${SITE_URL}/favicon.png" width="28" height="28" alt="" style="vertical-align:middle">` +
-      ` <span style="vertical-align:middle;display:inline-block;text-align:left">` +
-      `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>` +
-      `<span style="display:block;font:700 8px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a;margin-top:3px">TRADING CARDS</span>` +
-      `</span></td></tr>`,
+    emailShellStart(accent),
     `<tr><td align="center" style="padding:26px 20px 0;font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a">ORDER CONFIRMED</td></tr>`,
     `<tr><td align="center" style="padding:8px 20px 16px;${HEADLINE_FONT};font-size:36px;line-height:1.02;color:#ffffff">` +
       `${esc(opener)}<br>${esc(claim)}</td></tr>`,
-    pack?.imageUrl
-      ? `<tr><td align="center" style="padding:6px 0 0"><img src="${esc(absoluteUrl(pack.imageUrl))}" width="220" ` +
-        `alt="${esc(pack.title)}" style="display:block;max-width:220px;height:auto;transform:rotate(-6deg)"></td></tr>`
-      : "",
-    `<tr><td style="padding:24px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" ` +
-      `style="font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.12em;text-transform:uppercase;text-align:center"><tr>` +
-      `${step("Confirmed", true)}<td width="4"></td>${step("Packed", false)}<td width="4"></td>${step("Shipped", false)}` +
-      `</tr></table></td></tr>`,
+    packImageRow(pack),
+    progressBar(accent, 1),
     `<tr><td style="padding:18px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" ` +
       `style="font:14px/1.5 Helvetica,Arial,sans-serif;color:#ffffff">`,
     label(`Order #${orderRef}`, true),
@@ -358,72 +381,147 @@ export async function sendConfirmationEmail(
 // ─── Tracking ────────────────────────────────────────────────────────────────
 // Sent when the label is bought. USPS tracking starts updating at the first scan.
 
-type TrackingTarget = Pick<OrderEmailInput, "sessionId" | "customerEmail">;
+// ─── Status emails: Packed, Shipped, Delivered ─────────────────────────────
+// Same look as the confirmation (pack image, accent, progress bar). The bar fills
+// one more step each time: Confirmed → Packed → Shipped → Delivered.
 
-export function buildTrackingEmail(
-  o: TrackingTarget,
-  t: { service: string; trackingNumber: string; trackingUrl: string },
+export type StatusStage = "packed" | "shipped" | "delivered";
+
+export type StatusTarget = { sessionId: string; quantity: number; item: string };
+
+export type StatusTracking = {
+  carrier: string; // "USPS" | "UPS"
+  trackingNumber: string;
+  trackingUrl: string;
+  shippedAt?: Date | null;
+  deliveredAt?: Date | null;
+  location?: string | null;
+  statusDetail?: string | null;
+};
+
+const STEP_LIT: Record<StatusStage, number> = { packed: 2, shipped: 3, delivered: 4 };
+
+const emailDate = (d: Date) => d.toLocaleDateString("en-US", { month: "short", day: "numeric", timeZone: "America/New_York" });
+
+export function buildStatusEmail(
+  stage: StatusStage,
+  o: StatusTarget,
+  pack: ConfirmationPack | null,
+  t: StatusTracking,
 ): OrderEmail {
+  const qty = o.quantity || 1;
+  const name = packName(pack, o.item);
+  const packs = name ? `${qty} ${name} ${qty === 1 ? "pack" : "packs"}` : "order";
+  const your = name ? `your ${name} ${qty === 1 ? "pack" : "packs"}` : "your order";
+  const accent = accentOf(pack);
   const orderRef = o.sessionId.slice(-8).toUpperCase();
-  const subject = `Your order is packed: tracking ${t.trackingNumber}`;
+  const shopUrl = `${SITE_URL}/?utm_source=email&utm_medium=email&utm_campaign=${stage}`;
+
+  const copy = {
+    packed: {
+      subject: `Packed: ${your} ${qty === 1 ? "has" : "have"} tracking`,
+      eyebrow: "PACKED AND LABELED",
+      headline: ["Packed.", "Tracking's live."],
+      note: `Tracking starts updating once ${t.carrier} scans it, usually within a day.`,
+      button: { label: "TRACK PACKAGE", href: t.trackingUrl },
+    },
+    shipped: {
+      subject: `Shipped: ${your} ${qty === 1 ? "is" : "are"} on the move`,
+      eyebrow: "SHIPPED",
+      headline: ["It's on", "the move."],
+      note: [
+        t.shippedAt ? `First scanned by ${t.carrier} on ${emailDate(t.shippedAt)}.` : `${t.carrier} has it.`,
+        t.location ? `Last seen in ${t.location}.` : "",
+      ].filter(Boolean).join(" "),
+      button: { label: "TRACK PACKAGE", href: t.trackingUrl },
+    },
+    delivered: {
+      subject: `Delivered: time to rip ${your}`,
+      eyebrow: "DELIVERED",
+      headline: ["It's there.", "Go rip it."],
+      note: "",
+      button: { label: "SHOP THE NEXT DROP", href: shopUrl },
+    },
+  }[stage];
+
+  const deliveredLine = [t.deliveredAt ? `Delivered ${emailDate(t.deliveredAt)}` : "Delivered", t.statusDetail?.replace(/^Delivered,?\s*/i, "")]
+    .filter(Boolean)
+    .join(" · ");
+
   const text = [
-    "PACKED AND LABELED",
-    `Order #${orderRef} is packed and has a ${t.service} label.`,
+    copy.eyebrow,
+    `${copy.headline.join(" ")} (${packs})`,
     "",
+    `Order #${orderRef} · ${t.carrier}`,
     `Tracking: ${t.trackingNumber}`,
     ...(t.trackingUrl ? [t.trackingUrl] : []),
     "",
-    "Tracking starts updating once the carrier scans it, usually within a day.",
-    "Questions? Just reply to this email.",
-    "",
-    SITE_URL,
+    ...(stage === "delivered"
+      ? [deliveredLine, "Pull something good? Reply with a photo, we'd love to see it.", "Your next pack: TOPDECK10 takes 10% off.", "", shopUrl]
+      : [copy.note, "Questions? Just reply to this email.", "", SITE_URL]),
   ].join("\n");
 
+  const label = (txt: string) =>
+    `<tr><td style="padding:14px 0 6px;border-top:1px solid #222222;font-size:10px;letter-spacing:.14em;text-transform:uppercase;color:#9ca3af">${esc(txt)}</td></tr>`;
+  // One line, and the number itself opens the carrier's tracking page.
+  const trackingRow = t.trackingUrl
+    ? `<tr><td align="center" style="padding:8px 0 4px;white-space:nowrap"><a href="${esc(t.trackingUrl)}" ` +
+      `style="font:700 15px/1.4 'Courier New',monospace;letter-spacing:.02em;color:#ffffff;text-decoration:underline;white-space:nowrap">` +
+      `${esc(t.trackingNumber)}</a></td></tr>`
+    : `<tr><td align="center" style="padding:8px 0 4px;font:700 15px/1.4 'Courier New',monospace;white-space:nowrap;color:#ffffff">${esc(t.trackingNumber)}</td></tr>`;
+  const small = (txt: string, color = "#9ca3af") =>
+    txt ? `<tr><td align="center" style="padding:6px 0 0;font:12px/1.5 Helvetica,Arial,sans-serif;color:${color}">${txt}</td></tr>` : "";
+
+  const body =
+    stage === "delivered"
+      ? label(deliveredLine) +
+        small("Pull something good? Reply with a photo, we&#39;d love to see it.", "#d1d5db") +
+        small(`Your next pack: <span style="color:#ffffff;font-weight:700">TOPDECK10</span> takes 10% off.`) +
+        label(`Order #${orderRef} · ${t.carrier}`) +
+        trackingRow
+      : label(`Order #${orderRef} · ${t.carrier}`) + trackingRow + small(esc(copy.note));
+
   const html = [
-    `<div style="margin:0;background:#000000">`,
-    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="background:#000000"><tr><td align="center">`,
-    `<table width="100%" cellpadding="0" cellspacing="0" bgcolor="#000000" style="max-width:480px;background:#000000">`,
-    `<tr><td align="center" style="padding:28px 0 0">` +
-      `<img src="${SITE_URL}/favicon.png" width="28" height="28" alt="" style="vertical-align:middle">` +
-      ` <span style="vertical-align:middle;display:inline-block;text-align:left">` +
-      `<span style="display:block;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.16em;color:#f4f0e8">TOMMYTOPDECKER</span>` +
-      `<span style="display:block;font:700 8px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a;margin-top:3px">TRADING CARDS</span>` +
-      `</span></td></tr>`,
-    `<tr><td align="center" style="padding:26px 20px 0;font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a">PACKED AND LABELED</td></tr>`,
-    `<tr><td align="center" style="padding:8px 20px 6px;${HEADLINE_FONT};font-size:32px;line-height:1.05;color:#ffffff">On its way soon.</td></tr>`,
-    `<tr><td align="center" style="padding:0 28px;font:14px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
-      `Order #${esc(orderRef)} &middot; ${esc(t.service)}</td></tr>`,
-    `<tr><td align="center" style="padding:22px 28px 0;font:700 18px/1.4 'Courier New',monospace;letter-spacing:.06em;color:#ffffff">` +
-      `${esc(t.trackingNumber)}</td></tr>`,
-    t.trackingUrl
-      ? `<tr><td align="center" style="padding:18px 0 0"><a href="${esc(t.trackingUrl)}" style="display:inline-block;background:#22d3ee;` +
+    emailShellStart(accent),
+    `<tr><td align="center" style="padding:26px 20px 0;font:700 10px Helvetica,Arial,sans-serif;letter-spacing:.3em;color:#c85a5a">${copy.eyebrow}</td></tr>`,
+    `<tr><td align="center" style="padding:8px 20px 16px;${HEADLINE_FONT};font-size:32px;line-height:1.02;color:#ffffff">` +
+      `${copy.headline.map(esc).join("<br>")}</td></tr>`,
+    packImageRow(pack),
+    progressBar(accent, STEP_LIT[stage]),
+    `<tr><td style="padding:18px 28px 0"><table width="100%" cellpadding="0" cellspacing="0" style="font:14px/1.5 Helvetica,Arial,sans-serif;color:#ffffff">`,
+    body,
+    `</table></td></tr>`,
+    stage === "delivered" ? "" : small("Questions? Just reply to this email."),
+    copy.button.href
+      ? `<tr><td align="center" style="padding:20px 0 36px"><a href="${esc(copy.button.href)}" style="display:inline-block;background:#22d3ee;` +
         `color:#000000;font:700 11px Helvetica,Arial,sans-serif;letter-spacing:.25em;padding:12px 30px;border-radius:4px;` +
-        `text-decoration:none">TRACK PACKAGE</a></td></tr>`
-      : "",
-    `<tr><td align="center" style="padding:22px 28px 36px;font:12px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
-      `Tracking starts updating once the carrier scans it, usually within a day. Questions? Just reply to this email.</td></tr>`,
+        `text-decoration:none">${copy.button.label}</a></td></tr>`
+      : `<tr><td style="padding:0 0 36px"></td></tr>`,
     `</table></td></tr></table></div>`,
   ].join("");
 
-  return { subject, text, html };
+  return { subject: copy.subject, text, html };
 }
 
-export async function sendTrackingEmail(
-  o: TrackingTarget,
-  t: { service: string; trackingNumber: string; trackingUrl: string },
+export async function sendStatusEmail(
+  stage: StatusStage,
+  customerEmail: string,
+  o: StatusTarget,
+  pack: ConfirmationPack | null,
+  t: StatusTracking,
 ): Promise<void> {
-  if (!o.customerEmail || !t.trackingNumber) return;
-  const email = buildTrackingEmail(o, t);
+  if (!customerEmail || !t.trackingNumber) return;
+  const email = buildStatusEmail(stage, o, pack, t);
   await sendViaResend(
     {
       from: process.env.ORDER_EMAIL_FROM || DEFAULT_FROM,
-      to: [o.customerEmail],
+      to: [customerEmail],
       subject: email.subject,
       text: email.text,
       html: email.html,
       reply_to: process.env.SUPPORT_EMAIL || DEFAULT_SUPPORT,
     },
-    `tracking-${o.sessionId}`,
-    "tracking-email",
+    `${stage}-${o.sessionId}`,
+    `${stage}-email`,
   );
 }
