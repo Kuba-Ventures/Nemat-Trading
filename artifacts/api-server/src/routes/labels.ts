@@ -3,9 +3,11 @@ import Stripe from "stripe";
 import { verifyLabelToken } from "../lib/labelLink";
 import {
   buyLabelOnce,
+  emailTrackingOnce,
   labelOrderFromSession,
   markShippedOnce,
   printablePdf,
+  refreshTracking,
   savedLabel,
   shippedTracking,
   type LabelOrder,
@@ -109,7 +111,12 @@ router.post("/labels/:id/shipped", async (req, res) => {
   if (!o) return page(res, 404, `<h1>Order not found</h1>`);
 
   const saved = await markShippedOnce(id, { trackingNumber, trackingUrl: trackingUrlFor(trackingNumber) });
-  if (saved) console.log(`[label] ${id} marked shipped via Pirate Ship (${carrierFor(trackingNumber)})`);
+  if (saved) {
+    console.log(`[label] ${id} marked shipped via Pirate Ship (${carrierFor(trackingNumber)})`);
+    // Customer gets their tracking from us right away; carrier status follows.
+    await emailTrackingOnce(id);
+    void refreshTracking(id);
+  }
   // Post/redirect/get. If it was already shipped the page just says so.
   res.redirect(303, saved ? `${back}&shipped=1` : back);
 });

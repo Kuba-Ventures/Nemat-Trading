@@ -27,10 +27,14 @@ export function esc(s: string): string {
   return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/"/g, "&quot;");
 }
 
-/** The address as Pirate Ship's "Paste address" box takes it, email last. */
+/**
+ * The address as Pirate Ship's "Paste address" box takes it. No customer email:
+ * we send the tracking email ourselves when the order is marked shipped, so
+ * Pirate Ship shouldn't send a second one.
+ */
 export function pasteAddress(o: LabelOrder): string {
   const locality = [o.to.city, o.to.state].filter(Boolean).join(", ");
-  return [o.to.name, o.to.street1, o.to.street2, `${locality} ${o.to.zip}`.trim(), o.to.email]
+  return [o.to.name, o.to.street1, o.to.street2, `${locality} ${o.to.zip}`.trim()]
     .filter(Boolean)
     .join("\n");
 }
@@ -47,7 +51,7 @@ export function shipBody(o: LabelOrder, t: string, badTracking = false): string 
     `<a class="btn" id="cp" href="${PIRATE_SHIP_URL}" target="_blank" rel="noopener">Copy address + open Pirate Ship</a>` +
     `<form method="post" action="/api/labels/${id}/shipped" onsubmit="this.b.disabled=true;this.b.textContent='Saving…'">` +
     `<input type="hidden" name="t" value="${t}">` +
-    `<label for="trk">Then paste the tracking number</label>` +
+    `<label for="trk">Then paste the tracking number. We email the customer their tracking.</label>` +
     `<input type="text" id="trk" name="tracking" required autocomplete="off" inputmode="text" placeholder="9400 1000 0000 0000 0000 00">` +
     (badTracking ? `<p class="err">That doesn't look like a tracking number. Copy it from Pirate Ship and try again.</p>` : "") +
     `<button class="btn alt" name="b">Mark shipped</button></form>` +

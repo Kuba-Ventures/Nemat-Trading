@@ -23,8 +23,8 @@ const ORDER: LabelOrder = {
   displayName: "USPS Ground Advantage",
 };
 
-test("paste address is what Pirate Ship's Paste address box takes, email last", () => {
-  assert.equal(pasteAddress(ORDER), "Jordan Rivera\n123 Example St\nApt 4\nAustin, TX 78701\njordan@example.com");
+test("paste address is what Pirate Ship's Paste address box takes, without the customer email", () => {
+  assert.equal(pasteAddress(ORDER), "Jordan Rivera\n123 Example St\nApt 4\nAustin, TX 78701");
 });
 
 test("ship page offers Pirate Ship and the tracking form, never Shippo", () => {

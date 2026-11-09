@@ -373,7 +373,7 @@ export function buildTrackingEmail(
     `Tracking: ${t.trackingNumber}`,
     ...(t.trackingUrl ? [t.trackingUrl] : []),
     "",
-    "Tracking starts updating once USPS scans it, usually within a day.",
+    "Tracking starts updating once the carrier scans it, usually within a day.",
     "Questions? Just reply to this email.",
     "",
     SITE_URL,
@@ -401,7 +401,7 @@ export function buildTrackingEmail(
         `text-decoration:none">TRACK PACKAGE</a></td></tr>`
       : "",
     `<tr><td align="center" style="padding:22px 28px 36px;font:12px/1.5 Helvetica,Arial,sans-serif;color:#9ca3af">` +
-      `Tracking starts updating once USPS scans it, usually within a day. Questions? Just reply to this email.</td></tr>`,
+      `Tracking starts updating once the carrier scans it, usually within a day. Questions? Just reply to this email.</td></tr>`,
     `</table></td></tr></table></div>`,
   ].join("");
 

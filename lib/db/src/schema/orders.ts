@@ -29,6 +29,17 @@ export const ordersTable = pgTable("orders", {
   trackingUrl: text("tracking_url"),
   labelUrl: text("label_url"),
   labelCostCents: integer("label_cost_cents"),
+  // Fulfillment timeline for the admin shipping view. label_created_at is when the
+  // tracking number reached us (Shippo purchase or "Mark shipped"); shipped_at and
+  // delivered_at come from the carrier's tracking history via Shippo's tracking API.
+  labelCreatedAt: timestamp("label_created_at"),
+  shippedAt: timestamp("shipped_at"),
+  deliveredAt: timestamp("delivered_at"),
+  trackingStatus: text("tracking_status"),
+  trackingStatusDetail: text("tracking_status_detail"),
+  trackingLocation: text("tracking_location"),
+  trackingCheckedAt: timestamp("tracking_checked_at"),
+  trackingEmailedAt: timestamp("tracking_emailed_at"),
   createdAt: timestamp("created_at").notNull().defaultNow(),
 });
 

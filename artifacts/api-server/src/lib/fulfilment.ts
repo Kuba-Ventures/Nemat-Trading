@@ -1,7 +1,9 @@
 import type Stripe from "stripe";
-import { and, eq, isNull } from "drizzle-orm";
+import { and, eq, isNotNull, isNull, lt, notInArray, or, sql } from "drizzle-orm";
 import { db, ordersTable } from "@workspace/db";
-import { buyLabel, type LabelResult, type ShipTo } from "./shippo";
+import { SHIPPO_API, buyLabel, type LabelResult, type ShipTo } from "./shippo";
+import { parseShippoTrack, shippoCarrier } from "./shipStatus";
+import { carrierFor } from "./tracking";
 import { buildShippingPdf, fetchLabelPdf, type SlipInput } from "./packingSlip";
 import { sendTrackingEmail } from "./orderEmail";
 
@@ -139,6 +141,8 @@ export async function buyLabelOnce(
         trackingUrl: label.trackingUrl || null,
         labelUrl: label.labelUrl,
         labelCostCents: label.costCents,
+        labelCreatedAt: new Date(),
+        trackingEmailedAt: new Date(),
       })
       .where(eq(ordersTable.stripeSessionId, o.sessionId));
   } catch (err) {
@@ -173,10 +177,118 @@ export async function markShippedOnce(
       shippoTransactionId: SHIPPED_ELSEWHERE,
       trackingNumber: tracking.trackingNumber,
       trackingUrl: tracking.trackingUrl,
+      labelCreatedAt: new Date(),
     })
     .where(and(eq(ordersTable.stripeSessionId, sessionId), isNull(ordersTable.shippoTransactionId)))
     .returning({ id: ordersTable.id });
   return claimed.length > 0;
+}
+
+/**
+ * Marks an order shipped without any tracking (a test order, or one that went
+ * out long ago with no number kept). Only claims an order that has no label yet.
+ */
+export async function markShippedUntracked(sessionId: string): Promise<boolean> {
+  const claimed = await db
+    .update(ordersTable)
+    .set({ shippoTransactionId: SHIPPED_ELSEWHERE })
+    .where(and(eq(ordersTable.stripeSessionId, sessionId), isNull(ordersTable.shippoTransactionId)))
+    .returning({ id: ordersTable.id });
+  return claimed.length > 0;
+}
+
+/** Pulls the latest carrier status from Shippo and saves it on the order. Never throws. */
+export async function refreshTracking(sessionId: string): Promise<void> {
+  const token = process.env.SHIPPO_API_TOKEN;
+  if (!token) return;
+  const [row] = await db
+    .select({ trackingNumber: ordersTable.trackingNumber })
+    .from(ordersTable)
+    .where(eq(ordersTable.stripeSessionId, sessionId));
+  const number = row?.trackingNumber;
+  if (!number) return;
+  try {
+    const res = await fetch(`${SHIPPO_API}/tracks/${shippoCarrier(number)}/${encodeURIComponent(number)}`, {
+      headers: { Authorization: `ShippoToken ${token}` },
+      signal: AbortSignal.timeout(15_000),
+    });
+    if (!res.ok) throw new Error(`Shippo tracks ${res.status}: ${(await res.text()).slice(0, 200)}`);
+    const u = parseShippoTrack(await res.json());
+    await db
+      .update(ordersTable)
+      .set({
+        trackingStatus: u.status,
+        trackingStatusDetail: u.statusDetail,
+        trackingLocation: u.location,
+        // Keep the first scan we ever saw; Shippo can trim old history.
+        shippedAt: u.shippedAt ? sql`COALESCE(${ordersTable.shippedAt}, ${u.shippedAt})` : undefined,
+        deliveredAt: u.deliveredAt ?? undefined,
+        trackingCheckedAt: new Date(),
+      })
+      .where(eq(ordersTable.stripeSessionId, sessionId));
+  } catch (err) {
+    console.error(`[tracking] refresh failed for ${sessionId}:`, err);
+    // Still stamp the check, so one bad number doesn't get retried every run.
+    await db
+      .update(ordersTable)
+      .set({ trackingCheckedAt: new Date() })
+      .where(eq(ordersTable.stripeSessionId, sessionId))
+      .catch(() => {});
+  }
+}
+
+/** Emails the customer their tracking once per order. Returns whether it sent. */
+export async function emailTrackingOnce(sessionId: string): Promise<boolean> {
+  const claimed = await db
+    .update(ordersTable)
+    .set({ trackingEmailedAt: new Date() })
+    .where(
+      and(
+        eq(ordersTable.stripeSessionId, sessionId),
+        isNull(ordersTable.trackingEmailedAt),
+        isNotNull(ordersTable.trackingNumber),
+      ),
+    )
+    .returning({
+      email: ordersTable.customerEmail,
+      trackingNumber: ordersTable.trackingNumber,
+      trackingUrl: ordersTable.trackingUrl,
+    });
+  const row = claimed[0];
+  if (!row?.trackingNumber) return false;
+  try {
+    await sendTrackingEmail(
+      { sessionId, customerEmail: row.email },
+      { service: carrierFor(row.trackingNumber), trackingNumber: row.trackingNumber, trackingUrl: row.trackingUrl ?? "" },
+    );
+    return true;
+  } catch (err) {
+    console.error(`[tracking] email failed for ${sessionId}:`, err);
+    await db
+      .update(ordersTable)
+      .set({ trackingEmailedAt: null })
+      .where(eq(ordersTable.stripeSessionId, sessionId))
+      .catch(() => {});
+    return false;
+  }
+}
+
+const REFRESH_AFTER_MS = 3 * 60 * 60 * 1000;
+
+/** Refreshes every order still on its way whose status is older than 3 hours. */
+export async function refreshStaleTracking(now = new Date()): Promise<number> {
+  const rows = await db
+    .select({ sessionId: ordersTable.stripeSessionId })
+    .from(ordersTable)
+    .where(
+      and(
+        isNotNull(ordersTable.trackingNumber),
+        or(isNull(ordersTable.trackingStatus), notInArray(ordersTable.trackingStatus, ["DELIVERED", "RETURNED"])),
+        or(isNull(ordersTable.trackingCheckedAt), lt(ordersTable.trackingCheckedAt, new Date(now.getTime() - REFRESH_AFTER_MS))),
+      ),
+    );
+  for (const r of rows) await refreshTracking(r.sessionId);
+  return rows.length;
 }
 
 /** Label page(s) then the packing slip, ready to print. */

@@ -3,6 +3,7 @@ import { pool } from "@workspace/db";
 import { startWeeklySnapshotScheduler } from "./lib/weeklySnapshotJob";
 import { startMetaAdsCheckScheduler } from "./lib/metaAdsCheckJob";
 import { startDependencyHealthScheduler } from "./lib/dependencyHealthJob";
+import { startTrackingScheduler } from "./lib/trackingJob";
 
 const rawPort = process.env["PORT"];
 
@@ -80,6 +81,16 @@ async function migrate() {
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS label_url TEXT;
     ALTER TABLE orders ADD COLUMN IF NOT EXISTS label_cost_cents INTEGER;
+    -- Fulfillment timeline for the admin shipping view (label printed, carrier
+    -- scans, delivery), refreshed from Shippo's tracking API.
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS label_created_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS shipped_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS delivered_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_status TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_status_detail TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_location TEXT;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_checked_at TIMESTAMP;
+    ALTER TABLE orders ADD COLUMN IF NOT EXISTS tracking_emailed_at TIMESTAMP;
 
     CREATE TABLE IF NOT EXISTS subscribers (
       id SERIAL PRIMARY KEY,
@@ -160,6 +171,7 @@ migrate()
       startWeeklySnapshotScheduler();
       startMetaAdsCheckScheduler();
       startDependencyHealthScheduler();
+      startTrackingScheduler();
     });
   })
   .catch((err) => {

@@ -3,6 +3,7 @@ import { fromDatetimeLocal, toDatetimeLocal } from "@/lib/datetime";
 import { FinanceDashboard, GrowthDashboard, type Metrics, type WeeklyEmailApi } from "./adminDashboards";
 import { ApiUnreachableError, HealthDownBanner, HealthListView, HealthMapView, useDependencyHealth } from "./adminHealth";
 import type { HealthReport } from "@/lib/dependencyHealth";
+import { ShippingDetail, ShippingSummary, StagePill, TrackingCell, matchesFilter, type ShipFilter, type ShippingInfo } from "./adminShipping";
 
 const API_URL = import.meta.env.VITE_API_URL ?? "";
 
@@ -93,6 +94,7 @@ type AdminOrder = {
   shippingMethod: string | null;
   shippingAddress: string | null;
   stripeSessionId: string;
+  shipping: ShippingInfo;
 };
 
 function sku(id: number) {
@@ -1297,6 +1299,47 @@ function OrderList({ adminKey }: { adminKey: string }) {
   const [syncMsg, setSyncMsg] = useState("");
   const [syncingSheet, setSyncingSheet] = useState(false);
   const [sheetMsg, setSheetMsg] = useState("");
+  const [filter, setFilter] = useState<ShipFilter>("all");
+  const [refreshing, setRefreshing] = useState(false);
+  const [refreshMsg, setRefreshMsg] = useState("");
+
+  // Shipping actions. Each returns a message for the row, or null on success.
+  async function orderAction(o: AdminOrder, path: string, body?: unknown): Promise<string | null> {
+    try {
+      const res = await adminFetch(`${API_URL}/api/admin/orders/${encodeURIComponent(o.stripeSessionId)}/${path}`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey, "Content-Type": "application/json" },
+        body: JSON.stringify(body ?? {}),
+      });
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok) return data.error ?? `API returned ${res.status}`;
+      await load();
+      if (path === "tracking") return data.emailed ? "Saved. Tracking emailed to the customer." : "Saved.";
+      if (path === "email-tracking") return data.sent ? "Tracking emailed." : "Already emailed.";
+      return null;
+    } catch (err: any) {
+      return err.message ?? "Request failed";
+    }
+  }
+
+  async function refreshTracking() {
+    setRefreshing(true);
+    setRefreshMsg("");
+    try {
+      const res = await adminFetch(`${API_URL}/api/admin/orders/refresh-tracking`, {
+        method: "POST",
+        headers: { "x-admin-key": adminKey },
+      });
+      const data = await res.json();
+      if (!res.ok) throw new Error(data.error ?? `API returned ${res.status}`);
+      setRefreshMsg(`Tracking refreshed · ${data.refreshed} ${data.refreshed === 1 ? "order" : "orders"}`);
+      await load();
+    } catch (err: any) {
+      setRefreshMsg(err.message ?? "Refresh failed");
+    } finally {
+      setRefreshing(false);
+    }
+  }
 
   async function load() {
     setLoading(true);
@@ -1377,6 +1420,14 @@ function OrderList({ adminKey }: { adminKey: string }) {
           )}
           {syncMsg && <span className="text-xs text-gray-500">{syncMsg}</span>}
           {sheetMsg && <span className="text-xs text-gray-500">{sheetMsg}</span>}
+          {refreshMsg && <span className="text-xs text-gray-500">{refreshMsg}</span>}
+          <button
+            onClick={refreshTracking}
+            disabled={refreshing}
+            className="rounded border border-white/10 px-4 py-2 text-xs text-gray-300 hover:text-white hover:border-white/30 transition-colors disabled:opacity-50"
+          >
+            {refreshing ? "Refreshing…" : "Refresh tracking"}
+          </button>
           <button
             onClick={syncFromStripe}
             disabled={syncing}
@@ -1411,44 +1462,65 @@ function OrderList({ adminKey }: { adminKey: string }) {
       )}
 
       {!loading && orders.length > 0 && (
-        <div className="border border-white/[0.06] rounded overflow-hidden">
-          <div className="grid grid-cols-[auto_1fr_1fr_auto_auto] gap-4 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
+        <>
+        <ShippingSummary orders={orders} filter={filter} onFilter={setFilter} />
+        <div className="border border-white/[0.06] rounded overflow-x-auto">
+          <div className="min-w-[820px]">
+          <div className="grid grid-cols-[90px_1.3fr_1fr_160px_1.2fr_80px] gap-4 px-5 py-3 border-b border-white/[0.06] bg-white/[0.02]">
             <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Date</span>
             <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Item</span>
             <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Customer</span>
-            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 text-center">Qty</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Shipping</span>
+            <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600">Tracking</span>
             <span className="text-[10px] uppercase tracking-[0.2em] text-gray-600 text-right">Total</span>
           </div>
-          {orders.map((o, i) => (
-            <div key={o.id} className={i < orders.length - 1 ? "border-b border-white/[0.04]" : ""}>
+          {orders.filter((o) => matchesFilter(o.shipping, filter)).length === 0 && (
+            <p className="px-5 py-8 text-center text-sm text-gray-600">No orders here.</p>
+          )}
+          {orders.filter((o) => matchesFilter(o.shipping, filter)).map((o, i, shown) => (
+            <div key={o.id} className={i < shown.length - 1 ? "border-b border-white/[0.04]" : ""}>
               <button
                 onClick={() => setExpanded(expanded === o.id ? null : o.id)}
-                className="w-full grid grid-cols-[auto_1fr_1fr_auto_auto] gap-4 px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
+                aria-expanded={expanded === o.id}
+                className="w-full grid grid-cols-[90px_1.3fr_1fr_160px_1.2fr_80px] items-center gap-4 px-5 py-3.5 text-left hover:bg-white/[0.02] transition-colors"
               >
                 <span className="text-xs text-gray-500 whitespace-nowrap">
                   {new Date(o.date).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}
                 </span>
-                <span className="text-sm text-white truncate">{o.item}</span>
-                <span className="text-xs text-gray-400 font-mono truncate">{o.email}</span>
-                <span className="text-sm text-gray-300 text-center">{o.quantity}</span>
+                <span className="text-sm text-white truncate">{o.item} <span className="text-gray-500">×{o.quantity}</span></span>
+                <span className="text-xs text-gray-400 truncate" title={o.email}>{o.name?.trim() || o.email}</span>
+                <span><StagePill s={o.shipping} /></span>
+                <TrackingCell s={o.shipping} />
                 <span className="text-sm text-cyan-400 font-semibold text-right whitespace-nowrap">{money(o.totalCents)}</span>
               </button>
               {expanded === o.id && (
-                <div className="px-5 pb-4 pt-1 text-xs text-gray-400 space-y-1 bg-white/[0.01]">
-                  {o.name && <div><span className="text-gray-600">Name:</span> {o.name}</div>}
-                  {o.shippingAddress && <div><span className="text-gray-600">Ship to:</span> {o.shippingAddress}</div>}
-                  {o.shippingMethod && <div><span className="text-gray-600">Shipping:</span> {o.shippingMethod}</div>}
-                  <div className="flex flex-wrap gap-x-4 pt-1">
-                    <span><span className="text-gray-600">Subtotal:</span> {money(o.subtotalCents)}</span>
-                    <span><span className="text-gray-600">Shipping:</span> {money(o.shippingCents)}</span>
-                    <span><span className="text-gray-600">Tax:</span> {money(o.taxCents)}</span>
+                <div className="px-5 pb-5 pt-2 text-xs text-gray-400 bg-white/[0.01] space-y-4">
+                  <ShippingDetail
+                    orderDate={o.date}
+                    shipTo={o.shippingAddress}
+                    s={o.shipping}
+                    onSaveTracking={(tracking, emailCustomer) => orderAction(o, "tracking", { tracking, emailCustomer })}
+                    onMarkUntracked={() => orderAction(o, "shipped-untracked")}
+                    onEmailTracking={() => orderAction(o, "email-tracking")}
+                  />
+                  <div className="space-y-1 border-t border-white/[0.04] pt-3">
+                    {o.name && <div><span className="text-gray-600">Name:</span> {o.name}</div>}
+                    <div><span className="text-gray-600">Email:</span> {o.email}</div>
+                    {o.shippingMethod && <div><span className="text-gray-600">Customer chose:</span> {o.shippingMethod}</div>}
+                    <div className="flex flex-wrap gap-x-4 pt-1">
+                      <span><span className="text-gray-600">Subtotal:</span> {money(o.subtotalCents)}</span>
+                      <span><span className="text-gray-600">Shipping:</span> {money(o.shippingCents)}</span>
+                      <span><span className="text-gray-600">Tax:</span> {money(o.taxCents)}</span>
+                    </div>
+                    <div className="text-gray-600 font-mono break-all pt-1">{o.stripeSessionId}</div>
                   </div>
-                  <div className="text-gray-600 font-mono break-all pt-1">{o.stripeSessionId}</div>
                 </div>
               )}
             </div>
           ))}
+          </div>
         </div>
+        </>
       )}
     </div>
   );
