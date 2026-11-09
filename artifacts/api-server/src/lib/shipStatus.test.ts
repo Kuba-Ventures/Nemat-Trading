@@ -1,6 +1,6 @@
 import { test } from "node:test";
 import assert from "node:assert/strict";
-import { parseShippoTrack, shipStage, shipTiming, shippoCarrier, type ShipRow } from "./shipStatus";
+import { emailStage, parseShippoTrack, shipStage, shipTiming, shippoCarrier, type ShipRow } from "./shipStatus";
 
 test("Shippo track: delivered package gets shipped and delivered dates", () => {
   const u = parseShippoTrack({
@@ -80,4 +80,14 @@ test("late rules: 3 days to ship, 7 days in transit, problems always", () => {
 test("Shippo carrier token", () => {
   assert.equal(shippoCarrier("1Z999AA10123456784"), "ups");
   assert.equal(shippoCarrier("9400100000000000000000"), "usps");
+});
+
+test("email stage is the furthest stage reached", () => {
+  const r = { trackingNumber: null as string | null, trackingStatus: null as string | null, shippedAt: null as Date | null, deliveredAt: null as Date | null };
+  assert.equal(emailStage(r), null);
+  assert.equal(emailStage({ ...r, trackingNumber: "9400" }), "packed");
+  assert.equal(emailStage({ ...r, trackingNumber: "9400", trackingStatus: "PRE_TRANSIT" }), "packed");
+  assert.equal(emailStage({ ...r, trackingNumber: "9400", trackingStatus: "TRANSIT" }), "shipped");
+  assert.equal(emailStage({ ...r, trackingNumber: "9400", shippedAt: new Date() }), "shipped");
+  assert.equal(emailStage({ ...r, trackingNumber: "9400", trackingStatus: "DELIVERED" }), "delivered");
 });

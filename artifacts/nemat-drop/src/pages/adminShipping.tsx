@@ -21,6 +21,8 @@ export type ShippingInfo = {
   deliveredAt: string | null;
   checkedAt: string | null;
   emailedAt: string | null;
+  shippedEmailedAt?: string | null;
+  deliveredEmailedAt?: string | null;
 };
 
 export type ShipFilter = "all" | "to_ship" | "transit" | "delivered" | "attention";
@@ -261,7 +263,7 @@ export function ShippingDetail({
             </form>
             <label className="mt-2 flex items-center gap-2 text-xs text-gray-400">
               <input type="checkbox" checked={emailCustomer} onChange={(e) => setEmailCustomer(e.target.checked)} />
-              Email the customer their tracking
+              Email the customer now (Shipped and Delivered emails follow automatically)
             </label>
             <button
               type="button"
@@ -274,9 +276,22 @@ export function ShippingDetail({
           </>
         ) : (
           <>
-            <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-gray-600">Customer email</div>
-            {s.emailedAt ? (
-              <div className="text-xs text-gray-400">Tracking emailed {fmtDateTime(s.emailedAt)}</div>
+            <div className="mb-2 text-[10px] uppercase tracking-[0.2em] text-gray-600">Customer emails</div>
+            {s.emailedAt || s.shippedEmailedAt || s.deliveredEmailedAt ? (
+              <ul className="space-y-1 text-xs text-gray-400">
+                {(
+                  [
+                    ["Packed", s.emailedAt],
+                    ["Shipped", s.shippedEmailedAt],
+                    ["Delivered", s.deliveredEmailedAt],
+                  ] as const
+                ).map(([label, at]) => (
+                  <li key={label}>
+                    <span className={at ? "text-gray-300" : "text-gray-600"}>{label}</span>
+                    <span className="text-gray-500"> · {at ? fmtDateTime(at) : "not yet"}</span>
+                  </li>
+                ))}
+              </ul>
             ) : s.trackingNumber ? (
               <button
                 type="button"
