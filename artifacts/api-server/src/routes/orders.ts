@@ -4,6 +4,16 @@ import { db, ordersTable, productsTable } from "@workspace/db";
 import { desc } from "drizzle-orm";
 import { orderRowFromSession, skipBackfillSession } from "../lib/orderFromSession";
 import { requireAdmin } from "../lib/adminAuth";
+import {
+  SHIPPED_ELSEWHERE,
+  emailTrackingOnce,
+  markShippedOnce,
+  markShippedUntracked,
+  refreshStaleTracking,
+  refreshTracking,
+} from "../lib/fulfilment";
+import { shipTiming } from "../lib/shipStatus";
+import { carrierFor, normalizeTracking, trackingUrlFor } from "../lib/tracking";
 
 const router = Router();
 
@@ -18,7 +28,21 @@ router.get("/admin/orders", requireAdmin, async (_req, res) => {
     const products = await db.select().from(productsTable);
     const titleById = new Map(products.map((p) => [p.id, p.title]));
 
-    const orders = rows.map((o) => ({
+    const now = new Date();
+    const orders = rows.map((o) => {
+      const shippedElsewhere = o.shippoTransactionId === SHIPPED_ELSEWHERE;
+      const timing = shipTiming(
+        {
+          createdAt: o.createdAt,
+          trackingNumber: o.trackingNumber,
+          shippedElsewhere,
+          trackingStatus: o.trackingStatus,
+          labelCreatedAt: o.labelCreatedAt,
+          shippedAt: o.shippedAt,
+        },
+        now,
+      );
+      return {
       id: o.id,
       date: o.createdAt.toISOString(),
       email: o.customerEmail,
@@ -32,12 +56,90 @@ router.get("/admin/orders", requireAdmin, async (_req, res) => {
       shippingMethod: o.shippingMethod,
       shippingAddress: o.shippingAddress,
       stripeSessionId: o.stripeSessionId,
-    }));
+      shipping: {
+        stage: timing.stage,
+        days: timing.days,
+        late: timing.late,
+        carrier: o.trackingNumber ? carrierFor(o.trackingNumber) : null,
+        trackingNumber: o.trackingNumber,
+        trackingUrl: o.trackingUrl,
+        status: o.trackingStatus,
+        statusDetail: o.trackingStatusDetail,
+        location: o.trackingLocation,
+        labelCreatedAt: o.labelCreatedAt?.toISOString() ?? null,
+        shippedAt: o.shippedAt?.toISOString() ?? null,
+        deliveredAt: o.deliveredAt?.toISOString() ?? null,
+        checkedAt: o.trackingCheckedAt?.toISOString() ?? null,
+        emailedAt: o.trackingEmailedAt?.toISOString() ?? null,
+      },
+    };
+    });
 
     res.json(orders);
   } catch (err) {
     console.error("[admin/orders] failed to load orders:", err);
     res.status(500).json({ error: "Failed to load orders" });
+  }
+});
+
+// Admin: save a tracking number for an order (e.g. one Shawn emailed over).
+// Only works on an order with no label yet, so it can never overwrite tracking.
+router.post("/admin/orders/:sessionId/tracking", requireAdmin, async (req, res) => {
+  const sessionId = String(req.params.sessionId);
+  const trackingNumber = normalizeTracking(req.body?.tracking);
+  if (!trackingNumber) {
+    res.status(400).json({ error: "That doesn't look like a tracking number" });
+    return;
+  }
+  try {
+    const saved = await markShippedOnce(sessionId, { trackingNumber, trackingUrl: trackingUrlFor(trackingNumber) });
+    if (!saved) {
+      res.status(409).json({ error: "This order already has a label or is marked shipped" });
+      return;
+    }
+    await refreshTracking(sessionId);
+    const emailed = req.body?.emailCustomer === false ? false : await emailTrackingOnce(sessionId);
+    res.json({ ok: true, emailed });
+  } catch (err) {
+    console.error("[admin/orders] saving tracking failed:", err);
+    res.status(500).json({ error: "Couldn't save the tracking number" });
+  }
+});
+
+// Admin: mark shipped with no tracking (a test order, or an old one with no number).
+router.post("/admin/orders/:sessionId/shipped-untracked", requireAdmin, async (req, res) => {
+  try {
+    const saved = await markShippedUntracked(String(req.params.sessionId));
+    if (!saved) {
+      res.status(409).json({ error: "This order already has a label or is marked shipped" });
+      return;
+    }
+    res.json({ ok: true });
+  } catch (err) {
+    console.error("[admin/orders] mark shipped failed:", err);
+    res.status(500).json({ error: "Couldn't update the order" });
+  }
+});
+
+// Admin: email the customer their tracking (if it hasn't gone out yet).
+router.post("/admin/orders/:sessionId/email-tracking", requireAdmin, async (req, res) => {
+  try {
+    const sent = await emailTrackingOnce(String(req.params.sessionId));
+    res.json({ ok: true, sent });
+  } catch (err) {
+    console.error("[admin/orders] tracking email failed:", err);
+    res.status(500).json({ error: "Couldn't send the tracking email" });
+  }
+});
+
+// Admin: refresh carrier status for every order still on its way.
+router.post("/admin/orders/refresh-tracking", requireAdmin, async (_req, res) => {
+  try {
+    const refreshed = await refreshStaleTracking(new Date(Date.now() + 24 * 60 * 60 * 1000));
+    res.json({ ok: true, refreshed });
+  } catch (err) {
+    console.error("[admin/orders] refresh failed:", err);
+    res.status(500).json({ error: "Couldn't refresh tracking" });
   }
 });
 
