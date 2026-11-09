@@ -1,13 +1,13 @@
 # Nemat / Tommy Top Decker Trading
 *Sealed trading card pack drops, under market, with honest pull odds.*
 
-*Last updated: 2026-11-02 18:49 ET by kuba-vault*
+*Last updated: 2026-11-09 18:30 ET by Claude Code (kuba-vault format)*
 
 ---
 
 ## TL;DR  [rewrite]
 
-Tommy Top Decker Trading sells one sealed-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live. The first Meta campaign (2026-09-28 to 2026-10-06) spent $133.88 for 1 real sale ($43.07, ROAS 0.32x). On 2026-10-13 and 2026-10-14 Finley shipped 19 PRs (#117 to #135): `TOPDECK10` promo codes, click-to-buy Shippo labels, server-side admin login, live Finance and Growth dashboards, and a server-side Meta Purchase event, verified with a live test order. Shawn approved the relaunch on 2026-10-14 and "TTD Relaunch Oct - 14d - Sales" is live. Next: the first real relaunch order should show Purchase from both Browser and Server in Events Manager. Security: Railway reported on 2026-10-21 that workspace secrets were decrypted; an audit on 2026-10-23 found no misuse, and every secret on the API service was rotated and verified by 2026-11-02.
+Tommy Top Decker Trading sells one sealed-pack drop at a time at tommytopdecker.com: derived pull odds, live USPS quotes, Stripe checkout. It's live. The Oct relaunch campaign recorded 4 website purchases; on 2026-11-09 a new video-only campaign ("TTD Relaunch Nov - Video - Sales", $25/day, Reels only, ends 2026-11-23) went Active. The same day shipping moved to Pirate Ship, which has no API: the sales@ order email now opens a "Ship this order" page where Shawn copies the address into Pirate Ship and pastes the tracking number back (#159). The admin Orders page shows each order's shipping status, tracking, timeline and late alerts, with carrier status from Shippo's tracking API (#161), and customers get Packed, Shipped and Delivered emails in the confirmation's style (#162). Next: tracking numbers from Shawn for the 4 untracked October orders (one customer has asked for theirs).
 
 ---
 
@@ -25,15 +25,22 @@ Tommy Top Decker Trading sells one sealed-pack drop at a time at tommytopdecker.
 - **Phase:** live (post-MVP iteration)
 - **Engagement manager:** self-directed
 - **Lead:** Finley (build); Shawn (owner); Lauren (books)
-- **Cadence:** check-ins with Shawn (last 2026-10-01) plus email; Shawn approved the relaunch on 2026-10-14
-- **Next milestone:** first real order from the relaunch campaign shows Purchase from Browser and Server in Events Manager (no date set)
+- **Cadence:** monthly check-ins with Shawn (last 2026-11-06) plus email; follow-up and shipping emails sent 2026-11-09
+- **Next milestone:** tracking on every open order, then the Nov video campaign review on 2026-11-23
 - **Flags:** shipping
 
 ---
 
 ## Where we are right now  [rewrite]
 
-The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct - 14d - Sales" was Active with $0 spent at 12:20 PM ET that day. Finley is making new ad assets. The first campaign, "TTD Nemat - TMNT Collector - Sales", ran 2026-09-28 to 2026-10-06: $133.88 spent, 4.9% CTR, 1 real sale ($43.07, credited by hand), ROAS 0.32x. Issue #127 is closed. Meta never stopped receiving Purchase events; the Oct 13 orders only looked missing because the Overview date range ended Oct 12. The real gap was the 2026-09-30 Cash App Pay sale: the pixel never loaded on `/success`, so Meta never saw it. #130 now sends Purchase from the Stripe webhook to the Conversions API, deduplicated on the Stripe session id. A live $40.07 test order (refunded) on 2026-10-13 at 10:00 PM ET showed Browser and Server events with the same event id. The admin now has live Finance and Growth pages with a sync pill (#132), and that pill caught a Meta for Developers account lock on 2026-10-14 within minutes. Next concrete step: watch the first real relaunch order in Events Manager. It should show both Browser and Server Purchase, which also confirms the new CAPI token (2026-11-02, verified with `/me`) works end to end.
+**2026-11-09 session.** Followed up on the 2026-11-06 check-in with Shawn: video ads beat static on Meta, so the $500/month budget (about $25/day) goes to video only, and the TCG price countdown Reel beat the price explosion edit. Shawn now ships UPS from a rented UPS box (expensible through Nemat; he'll tell Lauren), has 66 MTG cards left (12 sealed packs of 5 plus extras), and proposed Pokemon retail hanger packs bundled 4 to 5 per box as the next product (about 300 on hand). He prefers Pirate Ship (custom return address).
+
+- **Shipping:** Pirate Ship has no public API or webhooks (only platform integrations and spreadsheet upload), so the order email's button became "Ship with Pirate Ship" (#159). The label page copies the address, opens Pirate Ship, and takes the tracking number back with "Mark shipped", which claims the order once. Fully automatic capture from forwarded Pirate Ship receipts is planned in #160.
+- **Admin shipping view (#161):** status tiles, a late alert, tracking and a timeline per order, "Add tracking" for numbers Shawn emails, and carrier status from Shippo's tracking API refreshed every 3 hours.
+- **Customer emails (#162):** Packed (tracking added), Shipped (first carrier scan) and Delivered emails in the confirmation's style, with a 4-step progress bar and a one-line, clickable tracking number. Only the furthest stage is sent, once.
+- **Customers:** check-in emails went to all 5 real customers on 2026-11-09 from sales@tommytopdecker.com (`utm_campaign=customer-checkin`). One replied that their Oct 29 order hasn't arrived. None of the 4 October orders have tracking in the database yet; Shawn has been asked for the numbers.
+- **Meta:** "TTD Relaunch Nov - Video - Sales" (copy of the Oct campaign) is Active: $20/day prospecting (US 18+ broad) plus $5/day retargeting (visitors 30d), 3 Reels on and all 14 static ads off, ending 2026-11-23. The empty "TTD Relaunch Nov - CBO Sales - DRAFT" was deleted. The first-campaign history and Events Manager check from October still apply: confirm Browser and Server Purchase on the next real order.
+- **Instagram:** @tommytopdecker is live and fully set up (name, logo, bio, UTM link), with no posts yet.
 
 **Railway security incident (2026-10-21 to 2026-11-02).** Railway emailed a notice on 2026-10-21: secrets in the "kubatopia's Projects" workspace were decrypted between 2026-10-20 13:58 UTC and 2026-10-22 03:32 UTC. The TTD API is Railway project "triumphant-dedication" in that workspace. The 2026-10-23 audit found no misuse: Stripe writes were only real checkouts, Anthropic usage was normal, Supabase connections came only from Railway IPs, Resend and GitHub were normal, and Meta showed only the known campaigns. Finley rotated and verified every API secret from 2026-10-23 to 2026-11-02 and deleted or disabled the old keys. No orders were missed. Still open: Abbey's Knee Glide project needs its own Meta token, and RecipeBook (Railway project "perpetual-respect", same workspace) still needs its rotation.
 
@@ -45,6 +52,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 - Storefront product page, live USPS quotes, Stripe checkout and success page (`src/pages/checkout.tsx`, `src/pages/success.tsx`). Phone layout fix for the order card (#97).
 - Customer accounts via Supabase auth: email+password with magic-link fallback, order history (`src/pages/account.tsx`, `src/lib/supabase.ts`).
 - Admin panel (`src/pages/admin.tsx`): products, orders, waitlist, Stripe order backfill, "Re-lock pull odds". Login posts to `POST /api/admin/login` and keeps a signed 12h token in sessionStorage; every call goes through `adminFetch` (#124). `VITE_ADMIN_PASSWORD` is gone from the bundle.
+- Admin shipping view on Orders (#161, option C; `src/pages/adminShipping.tsx`): tiles for All, To ship, In transit, Delivered and Needs attention that filter the list; a late alert (not shipped or label unscanned after 3 days, in transit over 7, or a carrier problem); a status pill and linked tracking per row; an expanded timeline (Ordered, Label printed, Shipped, Delivered) with ship-to and last-seen location; "Add tracking" with an optional customer email; "Mark shipped without tracking"; which customer emails went out; and a Refresh tracking button.
 - Admin layout (#135, option B): a left sidebar splits Insights (Finance, Growth) from Store (Products, Orders, Waitlist), with a "Storefront" link at the bottom. The nav no longer jumps between page widths; on phones it collapses to a grouped top bar.
 - Finance and Growth dashboards (`src/pages/adminDashboards.tsx`, #125, option A). Finance: revenue, net, orders, estimated profit, Stripe fees, postage, ad spend, refunds, revenue by day, recent orders with a Label column (Bought / Shipped / Not yet, #133). Growth: ROAS, cost per sale, repeat buyers, revenue vs ad spend, orders by source, campaigns (with Ended and Paused states, #128), GA4 visitor funnel (#128) and account links with brand logo chips, including the Facebook Page (#126, #129).
 - Live sync on both dashboards (#132, option A; `src/lib/syncStatus.ts`): a header pill reads "Live, synced <time>" using the oldest source's fetch time, turns amber "Stale" after 2 min and red when a source fails. The Sync button forces a fresh fetch (`?fresh=1`, debounced to 10s); the page auto-syncs every 60s while visible.
@@ -65,11 +73,12 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 - Promo codes (#118, `src/lib/promo.ts`): `POST /api/checkout/promo` checks `{ code, email }` (20 per 10 min per client); `POST /api/checkout` re-checks and creates the session with `discounts` and a locked `customer_email`. One use per customer, from the email's past completed sessions. `allow_promotion_codes` is off, so Stripe's own code box is gone. `TOPDECK10` (10% off) has been live in Stripe since 2026-10-13.
 - CORS allowlist from comma-separated `FRONTEND_URL` (`src/app.ts`). Production lists apex + www as of 2026-10-06.
 - Max 2 per item per order, enforced server-side (`src/routes/checkout.ts`). Stripe `success_url`/`cancel_url` use the first `FRONTEND_URL` entry (#110).
-- Order emails via Resend from the Stripe webhook (`src/lib/orderEmail.ts`, #93 to #95): a new-order alert to sales and an instant pack-themed confirmation to the buyer. Skipped if `RESEND_API_KEY` is unset.
+- Order emails via Resend from the Stripe webhook (`src/lib/orderEmail.ts`, #93 to #95): a new-order alert to sales and an instant pack-themed confirmation to the buyer. Since #162 the confirmation, Packed, Shipped and Delivered emails share one header, pack image, accent and a 4-step progress bar (Confirmed, Packed, Shipped, Delivered). Skipped if `RESEND_API_KEY` is unset.
 - Attribution (`src/lib/attribution.ts`, #100): checkout whitelists and caps the keys, stores them in Stripe metadata (`attr_` prefix), and the webhook copies them to 9 new nullable columns on `orders`. The Growth page reads them for orders by source (#125).
 - Shipping quotes and labels (`src/routes/shipping.ts`, `src/lib/shippo.ts`): quotes and labels share `parcelFor()`: 2 oz for the first pack plus 0.7 oz per extra, in a 6 x 4 x 1 in parcel (#121). Checkout stores the Shippo service token in session metadata.
-- Click-to-buy labels (#121, #122, #123, `src/routes/labels.ts`, `src/lib/labelLink.ts`): each paid order emails sales@ the packing slip and a "Buy label & print" button. The signed link (HMAC with `LABEL_LINK_SECRET`) shows the order on GET and buys only on POST, claims the row first so a double click can't buy twice, then emails the customer tracking and offers a label + slip PDF (`pdf-lib`). Seller phone and email come from `SHIP_FROM_*` env vars on Railway (#122).
+- Pirate Ship label page (#159, `src/routes/labels.ts`, `src/lib/labelPage.ts`, `src/lib/labelLink.ts`): each paid order emails sales@ the packing slip and a "Ship with Pirate Ship" button. The signed page (HMAC with `LABEL_LINK_SECRET`) shows the address (no customer email, so Pirate Ship doesn't send a second tracking email), "Copy address + open Pirate Ship", and a tracking field; `POST /api/labels/:id/shipped` validates the number (`src/lib/tracking.ts`), claims the order once with the shipped-elsewhere marker and saves tracking plus a UPS or USPS link. The original Shippo click-to-buy flow (#121 to #123) still backs Shippo labels, but its buy route is no longer linked from the page.
 - "Shipped" state for orders sent without a Shippo label (#133): `orders.shippo_transaction_id = 'shipped-elsewhere'` blocks any label purchase, the sales@ link shows "Already shipped" (packing slip only), and the dashboard Label column reads Shipped. No schema change. Order #P0RDZARQ (2026-09-30) is marked this way; postage shows $0.00 because the client shipped it and the cost is unknown.
+- Tracking and status emails (#161, #162; `src/lib/shipStatus.ts`, `src/lib/trackingJob.ts`, `src/lib/fulfilment.ts`): carrier status from `GET https://api.goshippo.com/tracks/{usps|ups}/{number}` (works for Pirate Ship numbers), cached on the order and refreshed every 30 min for undelivered orders older than 3 hours. Ten nullable `orders` columns: `label_created_at`, `shipped_at`, `delivered_at`, `tracking_status`, `tracking_status_detail`, `tracking_location`, `tracking_checked_at`, `tracking_emailed_at` (Packed), `shipped_emailed_at`, `delivered_emailed_at`. `sendStatusEmails` sends the furthest stage reached (Packed, Shipped, Delivered) once and marks earlier stages covered. Admin endpoints: `POST /api/admin/orders/:sessionId/{tracking,shipped-untracked,email-tracking}` and `POST /api/admin/orders/refresh-tracking`.
 - Pull-odds model and Possible Pulls selector in `src/routes/scryfall.ts`; `POST /api/admin/products/relock-pulls` backfill in `src/routes/products.ts`.
 - Lookup routes secured (#104, `src/routes/scryfall.ts`): `/tcgplayer/debug` removed. `POST /lookup/tcgplayer` (admin form, one Anthropic call per lookup), `GET /scryfall/:id/price` and `GET /tcgplayer/price-check` use the existing `requireAdmin` check (`x-admin-key` against `ADMIN_SECRET`) plus input validation.
 - Public `POST /tcgplayer/price` for the storefront (#104): accepts only `tcgplayer.com/product/<id>` URLs, builds the upstream URL from the id, and returns only `{ lowestPrice }`. Limited to 30 calls per 10 min per client by an in-memory fixed-window limiter (`src/lib/rate-limit.ts`) keyed on the rightmost X-Forwarded-For entry.
@@ -121,12 +130,13 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 | Integration | Purpose | Cost | Status |
 |---|---|---|---|
 | Stripe | Checkout + webhooks, promo codes, Finance metrics | usage-based | live |
-| Shippo | USPS rates; click-to-buy labels from the sales@ email (#123) | usage-based | live (rates and labels; a real label bought and tested through the sales@ link, owner confirmed 2026-10-14) |
+| Shippo | USPS rates at checkout; carrier tracking status for the admin and status emails (#161) | usage-based | live (labels now bought in Pirate Ship; Shippo label flow unlinked since #159) |
+| Pirate Ship | Shawn buys labels in his own account (custom return address) | per label | live, manual (no API; tracking pasted back via "Mark shipped", #159) |
 | Meta Conversions API | Server-side Purchase from the Stripe webhook (#130) | free | live, verified 2026-10-13 |
 | Meta Marketing API | Spend, campaigns, CTR for the Growth page | free | live |
-| Meta Ads | Paid traffic; first campaign $133.88 (2026-09-28 to 2026-10-06) | usage-based | live (relaunch campaign since 2026-10-14) |
+| Meta Ads | Paid traffic; first campaign $133.88 (2026-09-28 to 2026-10-06) | usage-based | live ("TTD Relaunch Nov - Video - Sales", $25/day, 2026-11-09 to 2026-11-23) |
 | GA4 Data API | Visitor funnel on Growth (#128) | free | live (`GA4_SERVICE_ACCOUNT_JSON` set, owner confirmed 2026-10-14) |
-| Resend | Order alert + customer confirmation emails | unknown | live |
+| Resend | Order alert, confirmation, Packed, Shipped and Delivered emails; SMTP for Gmail send-as sales@tommytopdecker.com | unknown | live |
 | Supabase | Postgres + customer auth | unknown | live |
 | Google Apps Script | Append orders and signups to a Sheet | free | live |
 | Google Tag Manager | Purchase value to `dataLayer` | free | live |
@@ -142,6 +152,12 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 ## Decisions log  [append-only, never rewrite or delete]
 
+- **2026-11-09, Ship with Pirate Ship by copy and paste (#159)**. Shawn prefers Pirate Ship for its custom return address, and it has no public API, so a one-click label like Shippo's isn't possible. Chose a label page that copies the address and takes the tracking number back over keeping Shippo (which could also set the return address) or a spreadsheet flow, because the owner wanted to follow the client's preference. The email's button is option A, the page is option C without Shippo, at the owner's direction.
+- **2026-11-09, Admin shipping view is option C (#161)**. Status tiles plus late alerts on the existing Orders page, chosen over plain status columns (A) or a separate shipping board (B), because the alert would have flagged the 11-day-old untracked order before the customer asked.
+- **2026-11-09, Packed, Shipped and Delivered emails, no Out for delivery (option B, #162)**. Out for delivery was dropped because a 3-hour status refresh can send it after the package arrives. Only the furthest stage is sent, so tracking added late never sends three emails at once.
+- **2026-11-09, We send the tracking email, not Pirate Ship**. The address copied into Pirate Ship leaves out the customer email so customers don't get two tracking emails.
+- **2026-11-09, Customer email goes out from sales@tommytopdecker.com**. The owner doesn't want customers emailed from finley@qsbsrollover.com. sales@ is a Gmail send-as alias through Resend SMTP; replies land in the sales@ Google Group.
+- **2026-11-09, Video-only Meta relaunch at $25/day**. Agreed with Shawn on 2026-11-06 after video beat static. Built as a copy of the Oct campaign (same pixel, targeting and catalog) with statics off; the earlier CBO draft was unusable (no creative, different catalog) and was deleted.
 - **2026-11-02, Secret rotation lessons from the Railway incident**. `openssl rand -hex 32 | pbcopy` copies a trailing newline, so use `openssl rand -hex 32 | tr -d '\n' | pbcopy`. Apps Script web app edits only go live after a New version deploy. Meta "Revoke tokens" kills every token from that system user, so revoke first and generate after. A shared system user couples projects; give each project its own.
 - **2026-11-02, Revoke all tokens on the shared Meta CAPI system user**. The system user is shared with the Knee Glide Lead Generation pixel (Abbey's project), so revoking was the only way to kill the exposed token. TTD got a new token from Events Manager (TTD Trading dataset, "without Dataset Quality API"), verified with a `/me` call from the Railway console. Knee Glide needs its own new token.
 - **2026-10-23, Rotate every Railway secret after Railway's 2026-10-21 notice**. Railway reported the workspace's secrets decrypted from 2026-10-20 13:58 UTC to 2026-10-22 03:32 UTC. The audit found no misuse, but the values were exposed, so all were rotated (2026-10-23 to 2026-11-02): `STRIPE_SECRET_KEY`, `STRIPE_WEBHOOK_SECRET`, the `DATABASE_URL` password, `ANTHROPIC_API_KEY`, `META_ACCESS_TOKEN` (ttd-dashboard system user), `SHIPPO_API_TOKEN`, `RESEND_API_KEY` (new sending-only key), `GA4_SERVICE_ACCOUNT_JSON`, `REMOVE_BG_API_KEY`, `ADMIN_SECRET`, `ADMIN_PASSWORD`, `SHEETS_WEBHOOK_SECRET` (also updated in the Apps Script), `LABEL_LINK_SECRET` (after all pending labels were bought) and `META_CAPI_ACCESS_TOKEN`. This reverses the 2026-10-14 decision to keep `ADMIN_SECRET`.
@@ -185,11 +201,17 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 ## Open loops  [rewrite, but carry forward unfinished items]
 
 - [ ] On the first real relaunch order, confirm Events Manager shows Purchase from both Browser and Server with one event id. The CAPI token was replaced on 2026-11-02, so this also checks the new token end to end. Owner: Finley
-- [ ] Finish the new ad assets for "TTD Relaunch Oct - 14d - Sales". In progress since 2026-10-14. Owner: Finley
+- [ ] Paste tracking for the 4 untracked October orders into the admin as Shawn sends it (Packed or Shipped emails go out automatically). One customer has asked for tracking. Owner: Finley, waiting on Shawn
+- [ ] Mark the 2026-09-28 internal test order "Mark shipped without tracking" in the admin so it stops showing as late. Owner: Finley
+- [ ] Review "TTD Relaunch Nov - Video - Sales" on or after 2026-11-23 (Reel - Counter vs Reel - Explosion, cost per sale). Owner: Finley
+- [ ] Pirate Ship receipt automation (#160): get one forwarded receipt from Shawn, enable Resend receiving on a subdomain (DNS, needs owner's OK), then build the parser. Owner: Finley
+- [ ] First Instagram trial Reels from the existing Reel videos (0 posts). Owner: Finley
+- [ ] Shortlist small MTG creators for promotion (agreed 2026-11-06). Owner: Finley
+- [ ] Print the thank-you cards, film card-spread content, and email Lauren about the UPS box and camera expenses. Owner: Shawn
 - [ ] Review relaunch results on the Growth page (sales, cost per sale, ROAS) against the first campaign's $133.88 spend and 0.32x ROAS. Owner: Finley
 - [ ] Give the Knee Glide Lead Generation pixel its own Meta Conversions API token; all tokens on the shared system user were revoked on 2026-11-02. Owner: Abbey
 - [ ] Rotate RecipeBook's secrets (Railway project "perpetual-respect", same workspace as TTD, covered by the 2026-10-21 Railway notice). Owner: Finley
-- [ ] Record labels bought outside the app on their orders: `label_url` and tracking stay empty today. Found during the incident work, not fixed. Owner: Finley
+- [x] Record labels bought outside the app on their orders: done 2026-11-09 via "Mark shipped" (#159) and admin "Add tracking" (#161).
 - [ ] Confirm `ADMIN_ACCEPT_LEGACY_KEY` is unset on Railway (the last #124 env step; not confirmed). Owner: Finley
 - [ ] Send the thank-you cards to print from the print-ready PDF (#120). Not sent as of 2026-10-14. Owner: Finley
 - [ ] Answer Shawn's 2026-10-03 email about opening a Mercury account and its minimum balance. Owner: Finley
@@ -208,7 +230,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 ## Risks & known issues  [rewrite]
 
 - **Meta tracking depends on one developer account.** On 2026-10-14 at about 11:45 AM ET the Graph API returned "API access blocked": Meta locked the Meta for Developers account for "unusual activity". Account confirmation restored access at about 11:48 AM ET. Unknown whether the server-side CAPI token was affected; the first real relaunch order will show it.
-- **One real sale so far.** The first campaign spent $133.88 for 1 real sale (ROAS 0.32x). The relaunch has no results yet.
+- **Early sales.** The first campaign spent $133.88 for 1 real sale (ROAS 0.32x); the Oct relaunch recorded 4 website purchases. The Nov video campaign started 2026-11-09.
 - **Hand-credited sales are manual.** Growth counts `utm_medium=manual` orders toward a campaign only if `utm_campaign` matches its exact name or id. A typo silently drops the credit.
 - **Postage unknown on shipped-elsewhere orders.** Orders marked `shipped-elsewhere` show $0.00 postage, so Finance understates shipping cost for them (#P0RDZARQ today).
 - **Promo check gaps.** One use per customer is keyed on email: a different email gets around it, and two simultaneous checkouts with one email both pass (#118).
@@ -222,11 +244,12 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 - **Railway is a shared secret store.** One Railway workspace ("kubatopia's Projects") holds TTD and RecipeBook, so one Railway breach exposes both. RecipeBook's rotation is still pending.
 - **Shared Meta system user.** The CAPI system user also serves Abbey's Knee Glide pixel. Revoking its tokens on 2026-11-02 broke Knee Glide's token too, until it gets a new one.
 - **Old label links are dead.** Rotating `LABEL_LINK_SECRET` made every earlier sales@ "Buy label & print" link return 403. All pending labels were bought first.
-- **Labels bought outside the app are invisible.** Orders whose label was bought elsewhere keep `label_url` and tracking empty (known, not fixed).
+- **Tracking depends on a paste.** Pirate Ship has no API, so the site only knows about a label when Shawn taps "Mark shipped" or Finley adds tracking in the admin. Until #160 lands, a forgotten paste means no customer email and an order flagged late.
+- **Status lags up to about 3 hours.** Carrier status refreshes every 3 hours, so Shipped and Delivered emails can trail the real scan.
 - **Ephemeral uploads.** Server-side uploads land on Railway's local disk and vanish on redeploy; Cloudinary is optional.
 - **Special-printing odds are approximate.** One stated special rate covers all rare/mythic special treatments.
 - **FRONTEND_URL is tied to the Vercel domains.** It feeds the CORS allowlist (all entries) and the Stripe redirect base (first entry). Changing the primary domain on Vercel without updating Railway breaks every API call from the site; this caused the 2026-10-06 outage. Apex is primary, not www.
-- **Mac dev friction.** `pnpm-workspace.yaml` overrides strip darwin native binaries (rollup, esbuild), so frontend Vitest and the Vite dev server can't run on macOS locally. Frontend tests run in CI (factory-tests), which passes; UI changes get checked on Vercel previews. The API won't boot locally without a real `DATABASE_URL`.
+- **Mac dev friction.** `pnpm-workspace.yaml` overrides strip darwin native binaries (rollup, esbuild). On 2026-11-09 the Vite dev server and Vitest did run on Finley's Mac, so this may be fixed; CI (factory-tests) remains the source of truth. The API won't boot locally without a real `DATABASE_URL`, and booting it against production runs the bootstrap migrations, so previews used a mock admin API.
 - **`.env.example` secret hygiene.** Real production secrets have been pasted into `.env.example` before, and the repo is public. Check it whenever env vars change.
 
 ---
@@ -239,10 +262,12 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 - **Repo:** https://github.com/Kuba-Ventures/Nemat-Trading (public, default branch `master`, protected)
 - **Roadmap:** `ROADMAP.md`
 - **Brand guide:** `docs/brand-guide` (#115)
-- **Admin:** https://tommytopdecker.com/admin (Insights: Finance, Growth; Store: Products, Orders, Waitlist)
+- **Admin:** https://tommytopdecker.com/admin (Insights: Finance, Growth; Store: Products, Orders with shipping view, Waitlist)
 - **Meta dataset:** TTD Trading, pixel 891018810380986 (Events Manager)
 - **Meta Purchase issue (closed):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/127
 - **Shippo labels issue (closed):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/113
+- **Pirate Ship receipt automation (open):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/160
+- **Instagram:** https://www.instagram.com/tommytopdecker/
 - **Print-ready thank-you card:** `docs/brand-guide/exports/Tommy Top Decker Thank-you Card (print).pdf` (#120)
 - **Factory issue (closed):** https://github.com/Kuba-Ventures/Nemat-Trading/issues/96
 - **Client Drive folder:** (unknown)
@@ -253,6 +278,7 @@ The ad relaunch is live. Shawn approved it on 2026-10-14, and "TTD Relaunch Oct 
 
 ## Changelog  [append-only, never rewrite or delete]
 
+- **2026-11-09:** Recorded the 2026-11-06 check-in outcomes and the 2026-11-09 session. Merged and deployed #159 (Pirate Ship label page), #161 (admin shipping view, Shippo tracking, 8 new order columns) and #162 (Packed, Shipped and Delivered emails, 2 more columns); verified Railway SUCCESS, Vercel READY and the new columns in the live database. Opened #160 (Pirate Ship receipt automation) with a matching ops tracker task. Meta: "TTD Relaunch Nov - Video - Sales" Active at $25/day until 2026-11-23; old CBO draft deleted. Customer check-ins sent from sales@ (new Gmail send-as via Resend). Instagram @tommytopdecker live. Closed the "labels bought outside the app" loop. Customer names and emails deliberately kept out of this public repo.
 - **2026-11-02:** Recorded the Railway security incident: notice on 2026-10-21 (secrets decrypted 2026-10-20 13:58 UTC to 2026-10-22 03:32 UTC), clean audit on 2026-10-23, every API secret rotated and verified 2026-10-23 to 2026-11-02 (about 15 min API downtime on 2026-10-23, about 1:21 to 1:36 PM PT, during the `DATABASE_URL` swap; no orders missed). Old Stripe secret key and an unused Stripe restricted key expired; old Anthropic, Shippo, Resend and Google service account keys deleted. Meta CAPI token replaced on 2026-11-02 after revoking the shared system user. Closed the leaked `ADMIN_SECRET` risk. Checked the Orders Sheet duplicate-row concern: the webhook passes `dedupeCol: 2` to `appendToSheet` and the Apps Script skips existing Order IDs, so it is not listed as a bug. New open loops: Knee Glide token (Abbey), RecipeBook rotation, labels bought outside the app.
 - **2026-10-14:** Recorded the owner's confirmations: Shippo has a payment method and a real label was bought and tested through the sales@ link; `GA4_SERVICE_ACCOUNT_JSON` is set; a `TOPDECK10` test order went through; thank-you cards not sent to print yet (Finley owns it); Finley owns the relaunch ad assets; `ADMIN_SECRET` deliberately not rotated (logged as a decision and an accepted risk). Checked `vercel env ls`: `VITE_ADMIN_PASSWORD` is no longer set on Vercel.
 - **2026-10-14:** Recorded the 2026-10-13 and 2026-10-14 session (#117 to #135, all merged and deployed). Closed #127: no outage, the real gap was the 2026-09-30 Cash App Pay sale; #130 adds server-side Meta CAPI Purchase, verified with a live $40.07 test order (refunded). Added #131 (Cash App Pay fees), #132 (live dashboards and sync pill), #133 (shipped-elsewhere state), #134 (hand-credited campaign sales), #135 (admin sidebar), plus #117 to #129 (TOPDECK10 one use per customer, print-ready card, click-to-buy labels, server-side admin login, Finance and Growth dashboards, GA4 funnel). Recorded first campaign results, Shawn's relaunch approval, the live relaunch campaign and the Meta developer account lock (about 3 minutes). Flag moved from on-track to shipping.

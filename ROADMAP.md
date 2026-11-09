@@ -1,6 +1,6 @@
 # Tommy Top Decker Trading Roadmap: turn paid ad traffic into attributable, repeatable drops
 
-*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders; Meta ads relaunched 2026-10-14 ("TTD Relaunch Oct - 14d - Sales") after the first campaign returned 1 real sale on $133.88 (ROAS 0.32x); server-side Meta Purchase live and verified (#130, closes #127); `TOPDECK10` live, one use per customer (#118, #119); click-to-buy Shippo labels shipped (#121 to #123, closes #113); admin login moved to the server (#124); every Railway API secret rotated after Railway's 2026-10-21 security notice (2026-10-23 to 2026-11-02, audit found no misuse); live Finance and Growth dashboards with a sync pill and sidebar (#125 to #135); every item dated · last verified against the code, PRs and issues 2026-11-02*
+*Owner: Finley · Started: 2026-10-02 · Status: live and taking orders; Meta ads relaunched 2026-10-14 ("TTD Relaunch Oct - 14d - Sales") after the first campaign returned 1 real sale on $133.88 (ROAS 0.32x); server-side Meta Purchase live and verified (#130, closes #127); `TOPDECK10` live, one use per customer (#118, #119); click-to-buy Shippo labels shipped (#121 to #123, closes #113); admin login moved to the server (#124); every Railway API secret rotated after Railway's 2026-10-21 security notice (2026-10-23 to 2026-11-02, audit found no misuse); live Finance and Growth dashboards with a sync pill and sidebar (#125 to #135); shipping moved to Pirate Ship with an admin shipping view and Packed, Shipped and Delivered emails (#159, #161, #162); video-only Meta campaign live 2026-11-09; every item dated · last verified against the code, PRs and issues 2026-11-09*
 
 ## What this is
 
@@ -40,6 +40,8 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a sealed trading card pack dro
 - **2026-10-14** · Server-side Meta Purchase merged (#130); #127 closed (no outage, the gap was the Cash App Pay sale). Cash App Pay fees counted (#131). Live dashboards with a sync pill (#132). Meta developer account lock at about 11:45 AM ET, cleared about 3 minutes later. Shipped-elsewhere order state (#133), hand-credited campaign sales (#134), admin sidebar (#135). Shawn approved the relaunch; "TTD Relaunch Oct - 14d - Sales" went live.
 - **2026-10-21** · Railway security notice: secrets in the "kubatopia's Projects" workspace (TTD API project "triumphant-dedication") were decrypted between 2026-10-20 13:58 UTC and 2026-10-22 03:32 UTC.
 - **2026-10-23** · Audit found no misuse across Stripe, Anthropic, Supabase, Resend, GitHub and Meta. Rotation started; the `DATABASE_URL` swap took the API down about 15 min (about 1:21 to 1:36 PM PT). No orders missed.
+- **2026-11-06** · Check-in with Shawn: video ads beat static, so the $500/month budget goes to video; ship with Pirate Ship (custom return address); next product may be Pokemon retail hanger packs in bundles.
+- **2026-11-09** · Pirate Ship label page (#159), admin shipping view (#161) and Packed, Shipped and Delivered emails (#162) merged and deployed. "TTD Relaunch Nov - Video - Sales" went Active ($25/day, Reels only, until 2026-11-23). Customer check-in emails sent from sales@. Instagram @tommytopdecker live. Opened #160.
 - **2026-11-02** · Rotation done: every Railway API secret replaced and verified, old keys deleted or expired. The shared Meta CAPI system user's tokens were revoked and TTD got a new token.
 
 ## Stage 0: Storefront and checkout (done, 2026-05-19 to 2026-10-06)
@@ -79,7 +81,13 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a sealed trading card pack dro
 - [x] **2026-10-14** · **(build)** "Shipped" state for orders sent without a Shippo label, no schema change (Kuba-Ventures/Nemat-Trading#133).
 - [x] **2026-10-14** · **(growth)** Hand-credited orders count toward campaign Sales (`utm_medium=manual`; Kuba-Ventures/Nemat-Trading#134).
 - [x] **2026-10-14** · **(design)** Admin sidebar separating Insights from Store (Kuba-Ventures/Nemat-Trading#135).
-- [~] **started 2026-10-14** · **(growth)** Meta ads relaunch: "TTD Relaunch Oct - 14d - Sales" live since 2026-10-14, approved by Shawn. Finley is making new ad assets.
+- [x] **2026-11-09** · **(growth)** Meta ads relaunch: "TTD Relaunch Oct - 14d - Sales" ran from 2026-10-14 (4 website purchases). Followed by "TTD Relaunch Nov - Video - Sales" on 2026-11-09: $25/day, Reels only, until 2026-11-23.
+- [ ] **added 2026-11-09** · **(growth)** Review the Nov video campaign on or after 2026-11-23.
+- [x] **2026-11-09** · **(build)** Ship with Pirate Ship from the order email: copy the address, paste tracking back with "Mark shipped" (Kuba-Ventures/Nemat-Trading#159).
+- [x] **2026-11-09** · **(design)** Admin shipping view on Orders: status tiles, late alerts, tracking and timeline, Shippo carrier status (Kuba-Ventures/Nemat-Trading#161).
+- [x] **2026-11-09** · **(build)** Packed, Shipped and Delivered customer emails in the confirmation's style with a 4-step progress bar (Kuba-Ventures/Nemat-Trading#162).
+- [ ] **added 2026-11-09** · **(build)** Auto-capture Pirate Ship tracking from forwarded label receipts (Kuba-Ventures/Nemat-Trading#160).
+- [ ] **added 2026-11-09** · **(growth)** First Instagram trial Reels for @tommytopdecker, and a shortlist of small MTG creators.
 - [ ] **added 2026-10-14** · **(growth)** Confirm the first real relaunch order shows Purchase from both Browser and Server in Events Manager.
 - [x] **2026-10-14** · **(growth)** Confirm `GA4_SERVICE_ACCOUNT_JSON` is set on Railway and the Growth funnel shows live data (not verified in #128). Set, owner confirmed 2026-10-14.
 - [x] **2026-08-26** · **(build)** Google Ads MCP setup docs and scripts, local and Cloud Run (`docs/google-ads-mcp.md`, `scripts/setup-google-ads-mcp.sh`, `scripts/deploy-google-ads-mcp-cloudrun.sh`; Kuba-Ventures/Nemat-Trading#61 to #64).
@@ -103,7 +111,7 @@ Tommy Top Decker Trading (repo: Nemat-Trading) is a sealed trading card pack dro
 - [x] **2026-10-13** · **(compliance)** Replace the client-side `VITE_ADMIN_PASSWORD` gate, which ships in the browser bundle. Server-side login with a signed 12h token (Kuba-Ventures/Nemat-Trading#124). `VITE_ADMIN_PASSWORD` is gone from Vercel (checked with `vercel env ls`, 2026-10-14). `ADMIN_SECRET` was not rotated, by owner decision (2026-10-14); since it also signs admin tokens, the leaked value stays an accepted risk. Rotated during the Railway incident (2026-10-23 to 2026-11-02), so the leaked value is dead.
 - [x] **2026-11-02** · **(compliance)** Rotate every Railway API secret after Railway's 2026-10-21 security notice: Stripe secret and webhook secret, `DATABASE_URL` password, Anthropic, Meta access and CAPI tokens, Shippo, Resend (sending-only), GA4 service account, remove.bg, `ADMIN_SECRET`, `ADMIN_PASSWORD`, `SHEETS_WEBHOOK_SECRET`, `LABEL_LINK_SECRET`. Old keys deleted or expired. Audit on 2026-10-23 found no misuse. No PR: config only.
 - [ ] **added 2026-11-02** · **(compliance)** Rotate RecipeBook's secrets (Railway project "perpetual-respect", same workspace, same notice). Owner: Finley.
-- [ ] **added 2026-11-02** · **(build)** Record labels bought outside the app on their orders (`label_url` and tracking stay empty today).
+- [x] **2026-11-09** · **(build)** Record labels bought outside the app on their orders: "Mark shipped" on the label page and admin "Add tracking" (Kuba-Ventures/Nemat-Trading#159, #161).
 
 ## Open questions
 
