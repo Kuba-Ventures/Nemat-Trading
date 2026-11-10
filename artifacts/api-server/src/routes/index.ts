@@ -13,6 +13,7 @@ import adminLoginRouter from "./adminLogin";
 import metricsRouter from "./metrics";
 import weeklySnapshotRouter from "./weeklySnapshot";
 import dependencyHealthRouter from "./dependencyHealth";
+import agentRouter from "./agent";
 
 const router: IRouter = Router();
 
@@ -30,5 +31,6 @@ router.use(adminLoginRouter);
 router.use(metricsRouter);
 router.use(weeklySnapshotRouter);
 router.use(dependencyHealthRouter);
+router.use(agentRouter);
 
 export default router;
